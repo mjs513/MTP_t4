@@ -36,7 +36,7 @@
 #include "usb_names.h"
 extern struct usb_string_descriptor_struct usb_string_serial_number; 
 
-#define DEBUG 0
+#define DEBUG 2
 #if DEBUG>0
   #define printf(...) Serial.printf(__VA_ARGS__)
 #else
@@ -142,6 +142,51 @@ extern struct usb_string_descriptor_struct usb_string_serial_number;
   const int supported_op_size=sizeof(supported_op);
   const int supported_op_num = supported_op_size/sizeof(supported_op[0]);
 
+#define MTP_EVENT_UNDEFINED                         0x4000
+  #define MTP_EVENT_CANCEL_TRANSACTION                0x4001
+  #define MTP_EVENT_OBJECT_ADDED                      0x4002
+  #define MTP_EVENT_OBJECT_REMOVED                    0x4003
+  #define MTP_EVENT_STORE_ADDED                       0x4004
+  #define MTP_EVENT_STORE_REMOVED                     0x4005
+  #define MTP_EVENT_DEVICE_PROP_CHANGED               0x4006
+  #define MTP_EVENT_OBJECT_INFO_CHANGED               0x4007
+  #define MTP_EVENT_DEVICE_INFO_CHANGED               0x4008
+  #define MTP_EVENT_REQUEST_OBJECT_TRANSFER           0x4009
+  #define MTP_EVENT_STORE_FULL                        0x400A
+  #define MTP_EVENT_DEVICE_RESET                      0x400B
+  #define MTP_EVENT_STORAGE_INFO_CHANGED              0x400C
+  #define MTP_EVENT_CAPTURE_COMPLETE                  0x400D
+  #define MTP_EVENT_UNREPORTED_STATUS                 0x400E
+  #define MTP_EVENT_OBJECT_PROP_CHANGED               0xC801
+  #define MTP_EVENT_OBJECT_PROP_DESC_CHANGED          0xC802  
+  #define MTP_EVENT_OBJECT_REFERENCES_CHANGED         0xC803
+
+  const uint16_t mtpEventList[] =
+  {
+    MTP_EVENT_UNDEFINED                         ,//0x4000
+    MTP_EVENT_CANCEL_TRANSACTION                ,//0x4001
+    MTP_EVENT_OBJECT_ADDED                      ,//0x4002
+    MTP_EVENT_OBJECT_REMOVED                    ,//0x4003
+    MTP_EVENT_STORE_ADDED                       ,//0x4004
+    MTP_EVENT_STORE_REMOVED                     ,//0x4005
+    MTP_EVENT_DEVICE_PROP_CHANGED               ,//0x4006
+    MTP_EVENT_OBJECT_INFO_CHANGED               ,//0x4007
+    MTP_EVENT_DEVICE_INFO_CHANGED               ,//0x4008
+    MTP_EVENT_REQUEST_OBJECT_TRANSFER           ,//0x4009
+    MTP_EVENT_STORE_FULL                        ,//0x400A
+    MTP_EVENT_DEVICE_RESET                      ,//0x400B
+    MTP_EVENT_STORAGE_INFO_CHANGED              ,//0x400C
+    MTP_EVENT_CAPTURE_COMPLETE                  ,//0x400D
+    MTP_EVENT_UNREPORTED_STATUS                 ,//0x400E
+    MTP_EVENT_OBJECT_PROP_CHANGED               ,//0xC801
+    MTP_EVENT_OBJECT_PROP_DESC_CHANGED          ,//0xC802  
+    MTP_EVENT_OBJECT_REFERENCES_CHANGED         //0xC803
+  };
+  
+  const int mtpEventListNum = sizeof(mtpEventList)/sizeof(mtpEventList[0]);
+  
+
+
 
   #define MTP_PROPERTY_STORAGE_ID                             0xDC01
   #define MTP_PROPERTY_OBJECT_FORMAT                          0xDC02
@@ -170,6 +215,7 @@ extern struct usb_string_descriptor_struct usb_string_serial_number;
   
   uint32_t propertyListNum = sizeof(propertyList)/sizeof(propertyList[0]);
   
+    
 // MTP Responder.
 /*
   struct MTPHeader {
@@ -214,7 +260,9 @@ extern struct usb_string_descriptor_struct usb_string_serial_number;
       write32(supported_op_num);
       for(int ii=0; ii<supported_op_num;ii++) write16(supported_op[ii]);
     
-    write32(0);       // Events (array of uint16)
+    write32(mtpEventListNum);       // Events (array of uint16)
+    for(int ii=0; ii<mtpEventListNum;ii++) write16(mtpEventList[ii]);
+
 
     write32(1);       // Device properties (array of uint16)
     write16(0xd402);  // Device friendly name
@@ -628,10 +676,44 @@ extern struct usb_string_descriptor_struct usb_string_serial_number;
       data_buffer_ = NULL;                                \
     } while(0)
 
-    #define printContainer() {   printf("%x %d %d %d: %x %x %x\n", \
-                CONTAINER->op, CONTAINER->len, CONTAINER->type, CONTAINER->transaction_id, \
-                CONTAINER->params[0], CONTAINER->params[1], CONTAINER->params[2]);  }
+#if DEBUG>0
+typedef struct {
+  uint16_t op;
+  const char *str;
+} OP_TO_STR_t;
+static const  OP_TO_STR_t opstrs[] = {
+  {0x1001, "MTP_OPERATION_GET_DEVICE_INFO"},
+  {0x1002, "MTP_OPERATION_OPEN_SESSION"},
+  {0x1004, "MTP_OPERATION_GET_STORAGE_IDS"},
+  {0x1005, "MTP_OPERATION_GET_STORAGE_INFO"},
+  {0x1007, "MTP_OPERATION_GET_OBJECT_HANDLES"},
+  {0x1008, "MTP_OPERATION_GET_OBJECT_INFO"},
+  {0x100b, "MTP_OPERATION_DELETE_OBJECT"},
+  {0x100c, "MTP_OPERATION_SEND_OBJECT_INFO"},
+  {0x100d, "MTP_OPERATION_SEND_OBJECT"},
+  {0x1014, "MTP_OPERATION_GET_DEVICE_PROP_DESC"},
+  {0x2001, "MTP_RESPONSE_OK"},
+  {0x9801, "MTP_OPERATION_GET_OBJECT_PROPS_SUPPORTED"},
+  {0x9802, "MTP_OPERATION_GET_OBJECT_PROP_DESC"},
+  {0x9803, "MTP_OPERATION_GET_OBJECT_PROP_VALUE"},
+};
 
+void printContainer() {
+
+  Serial.printf("%x %d %d %d: %x %x %x", 
+         CONTAINER->op, CONTAINER->len, CONTAINER->type, CONTAINER->transaction_id,
+         CONTAINER->params[0], CONTAINER->params[1], CONTAINER->params[2]); 
+  for (uint16_t i=0; i < (sizeof(opstrs)/sizeof(opstrs[0])); i++) {
+    if (opstrs[i].op == CONTAINER->op) {
+      Serial.printf(" - %s\n", opstrs[i].str);
+      return;
+    }
+  }
+  Serial.println();
+}
+#else 
+#define printContainer() {}
+#endif   
 
   void MTPD::read(char* data, uint32_t size) 
   {
@@ -682,19 +764,25 @@ extern struct usb_string_descriptor_struct usb_string_serial_number;
 
   void MTPD::SendObject() {
     uint32_t len = ReadMTPHeader();
+    Serial.printf("MTPD::SendObject(): %u\n", len);
     while (len) 
     { 
+      Serial.printf("  - %d", len);
       receive_buffer();
       uint32_t to_copy = data_buffer_->len - data_buffer_->index;
       to_copy = min(to_copy, len);
+      Serial.printf(" %d", to_copy);
       storage_->write((char*)(data_buffer_->buf + data_buffer_->index), to_copy);
       data_buffer_->index += to_copy;
       len -= to_copy;
+      Serial.printf(": %d %d", data_buffer_->index, len);
       if (data_buffer_->index == data_buffer_->len) 
       {
+        Serial.print("@");
         usb_free(data_buffer_);
         data_buffer_ = NULL;
       }
+      Serial.println();
     }
     storage_->close();
   }
@@ -981,10 +1069,49 @@ extern struct usb_string_descriptor_struct usb_string_serial_number;
     } while(0)
 
 
+  #if DEBUG>0
+    typedef struct {
+      uint16_t op;
+      const char *str;
+    } OP_TO_STR_t;
+    static const  OP_TO_STR_t opstrs[] = {
+      {0x1001, "MTP_OPERATION_GET_DEVICE_INFO"},
+      {0x1002, "MTP_OPERATION_OPEN_SESSION"},
+      {0x1004, "MTP_OPERATION_GET_STORAGE_IDS"},
+      {0x1005, "MTP_OPERATION_GET_STORAGE_INFO"},
+      {0x1007, "MTP_OPERATION_GET_OBJECT_HANDLES"},
+      {0x1008, "MTP_OPERATION_GET_OBJECT_INFO"},
+      {0x100b, "MTP_OPERATION_DELETE_OBJECT"},
+      {0x100c, "MTP_OPERATION_SEND_OBJECT_INFO"},
+      {0x100d, "MTP_OPERATION_SEND_OBJECT"},
+      {0x1014, "MTP_OPERATION_GET_DEVICE_PROP_DESC"},
+      {0x2001, "MTP_RESPONSE_OK"},
+      {0x9801, "MTP_OPERATION_GET_OBJECT_PROPS_SUPPORTED"},
+      {0x9802, "MTP_OPERATION_GET_OBJECT_PROP_DESC"},
+      {0x9803, "MTP_OPERATION_GET_OBJECT_PROP_VALUE"},
+    };
+
+    #define printContainer() { \
+      printf("%x %d %d %d: %x %x %x", \
+             CONTAINER->op, CONTAINER->len, CONTAINER->type, CONTAINER->transaction_id, \
+             CONTAINER->params[0], CONTAINER->params[1], CONTAINER->params[2]);  \
+      uint16_t iops;  \
+      for (iops=0; iops < (sizeof(opstrs)/sizeof(opstrs[0])); iops++) { \
+        if (opstrs[iops].op == CONTAINER->op) { \
+          printf(" - %s\n", opstrs[iops].str); \
+          break; \
+        } \
+      } \
+      if (iops == (sizeof(opstrs)/sizeof(opstrs[0]))) Serial.println(); \
+    } 
+    #else 
+    #define printContainer() {}
+    #endif   
+/*
     #define printContainer() { printf("%x %d %d %d: %x %x %x\n", \
                 CONTAINER->op, CONTAINER->len, CONTAINER->type, CONTAINER->transaction_id, \
                 CONTAINER->params[0], CONTAINER->params[1], CONTAINER->params[2]);  }
-
+*/
 
     void MTPD::read(char* data, uint32_t size) 
     {
@@ -1044,7 +1171,7 @@ extern struct usb_string_descriptor_struct usb_string_serial_number;
     void MTPD::SendObject() 
     { 
       pull_packet(rx_data_buffer);
-//      printContainer(); 
+      printContainer(); 
 
       read(0,0);
       uint32_t len = ReadMTPHeader();
@@ -1052,14 +1179,16 @@ extern struct usb_string_descriptor_struct usb_string_serial_number;
       disk_pos=0;
       
       while((int)len>0)
-      { uint32_t bytes = MTP_RX_SIZE - index;                     // how many data in usb-packet
+      { 
+        uint32_t start_time = millis();
+        uint32_t bytes = MTP_RX_SIZE - index;                     // how many data in usb-packet
         bytes = min(bytes,len);                                   // loimit at end
         uint32_t to_copy=min(bytes, DISK_BUFFER_SIZE-disk_pos);   // how many data to copy to disk buffer
         memcpy(disk_buffer+disk_pos, rx_data_buffer + index,to_copy);
         disk_pos += to_copy;
         bytes -= to_copy;
         len -= to_copy;
-        //printf("a %d %d %d %d %d\n", len,disk_pos,bytes,index,to_copy);
+        printf("a %d %d %d %d %d %u\n", len,disk_pos,bytes,index,to_copy,  millis()-start_time);
         //
         if(disk_pos==DISK_BUFFER_SIZE)
         {
@@ -1072,14 +1201,14 @@ extern struct usb_string_descriptor_struct usb_string_serial_number;
             disk_pos += bytes;
             len -= bytes;
           }
-          //printf("b %d %d %d %d %d\n", len,disk_pos,bytes,index,to_copy);
+          printf("b %d %d %d %d %d %u\n", len,disk_pos,bytes,index,to_copy, millis()-start_time);
         }
         if(len>0)  // we have still data to be transfered
         { pull_packet(rx_data_buffer);
           index=0;
         }
       }
-      //printf("len %d\n",disk_pos);
+      printf("len %d\n",disk_pos);
       if(disk_pos)
       {
         storage_->write((const char *)disk_buffer, disk_pos);

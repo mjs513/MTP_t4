@@ -359,6 +359,10 @@ void mtp_lock_storage(bool lock) {}
   uint32_t MTPStorage_SD::Create(uint32_t storage, uint32_t parent,  bool folder, const char* filename)
   {
     uint32_t ret;
+    #if DEBUG==1
+      Serial.printf("SCR: %s\n",filename);
+    #endif
+
     if (parent == 0xFFFFFFFFUL) parent = storage-1;
     Record p = ReadIndexRecord(parent);
     Record r;
@@ -395,13 +399,22 @@ void mtp_lock_storage(bool lock) {}
 
   void MTPStorage_SD::write(const char* data, uint32_t bytes)
   {
+    #if DEBUG==1
+      Serial.printf("  SW: %u",bytes);
+    #endif
       mtp_lock_storage(true);
       file_.write(data,bytes);
       mtp_lock_storage(false);
+    #if DEBUG==1
+      Serial.printf("!\n");
+    #endif
   }
 
   void MTPStorage_SD::close() 
   {
+    #if DEBUG==1
+      Serial.printf("SCL - start");
+    #endif
     mtp_lock_storage(true);
     uint32_t size = (uint32_t) file_.size();
     file_.close();
@@ -412,6 +425,9 @@ void mtp_lock_storage(bool lock) {}
     r.child = size;
     WriteIndexRecord(open_file_, r);
     open_file_ = 0xFFFFFFFEUL;
+    #if DEBUG==1
+      Serial.printf("SCL - complete\n");
+    #endif
   }
 
   bool MTPStorage_SD::rename(uint32_t handle, const char* name) 
