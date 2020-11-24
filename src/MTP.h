@@ -49,6 +49,7 @@ public:
 
 private:
   MTPStorageInterface* storage_;
+  uint32_t  sessionID_; // the session ID 
 
   struct MTPHeader {
     uint32_t len;  // 0
@@ -64,6 +65,14 @@ private:
     uint32_t transaction_id; // 8
     uint32_t params[5];    // 12
   } __attribute__((__may_alias__)) ;
+
+  struct MTPEvent {
+    uint32_t len;  // 0
+    uint16_t event_type; // 4
+    uint16_t event_code;   // 6
+    uint32_t session_id; // 8
+    uint32_t handle;    // 12
+  };
 
 #if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__)
   usb_packet_t *data_buffer_ = NULL;

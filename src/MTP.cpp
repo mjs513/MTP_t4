@@ -822,6 +822,7 @@ void printContainer() {
               TRANSMIT(WriteDescriptor());
               break;
             case 0x1002:  // OpenSession
+              sessionID_ = CONTAINER->params[0];
               openSession();
               break;
             case 0x1003:  // CloseSession
@@ -1232,157 +1233,184 @@ void printContainer() {
         return 0x2005;
     }
 
+
+    // test for events...
+    elapsedMillis emLastStorageInfoChange = 0;
+    uint32_t last_storageInfoChanged_id = 0;
+
     void MTPD::loop(void)
-    { if(!usb_mtp_available()) return;
-      if(fetch_packet(rx_data_buffer))
-      { printContainer(); // to switch on set debug to 1 at beginning of file
+    { if(usb_mtp_available()) {
+        if(fetch_packet(rx_data_buffer))
+        { printContainer(); // to switch on set debug to 1 at beginning of file
 
-        int op = CONTAINER->op;
-        int p1 = CONTAINER->params[0];
-        int p2 = CONTAINER->params[1];
-        int p3 = CONTAINER->params[2];
-        int id = CONTAINER->transaction_id;
-        int len= CONTAINER->len;
-        int typ= CONTAINER->type;
+          int op = CONTAINER->op;
+          int p1 = CONTAINER->params[0];
+          int p2 = CONTAINER->params[1];
+          int p3 = CONTAINER->params[2];
+          int id = CONTAINER->transaction_id;
+          int len= CONTAINER->len;
+          int typ= CONTAINER->type;
 
-        int return_code =0x2001; //OK use as default value
+          int return_code =0x2001; //OK use as default value
 
-        if(typ==2) return_code=0x2005; // we should only get cmds
+          if(typ==2) return_code=0x2005; // we should only get cmds
 
-        switch (op)
-        {
-          case 0x1001:
-            p1=0;
-            TRANSMIT(WriteDescriptor());
-            break;
+          switch (op)
+          {
+            case 0x1001:
+              p1=0;
+              TRANSMIT(WriteDescriptor());
+              break;
 
-          case 0x1002:  //open session
-            openSession();
-            break;
+            case 0x1002:  //open session
+              sessionID_ = p1;
+              openSession();
+              break;
 
-          case 0x1003:  // CloseSession
-            //
-            break;
+            case 0x1003:  // CloseSession
+              //
+              break;
 
-          case 0x1004:  // GetStorageIDs
-              TRANSMIT(WriteStorageIDs());
-            break;
+            case 0x1004:  // GetStorageIDs
+                TRANSMIT(WriteStorageIDs());
+              break;
 
-          case 0x1005:  // GetStorageInfo
-            TRANSMIT(GetStorageInfo(p1));
-            break;
+            case 0x1005:  // GetStorageInfo
+              TRANSMIT(GetStorageInfo(p1));
+              break;
 
-          case 0x1006:  // GetNumObjects
-            if (CONTAINER->params[1]) 
-            {
-                return_code = 0x2014; // spec by format unsupported
-            } else 
-            {
-                p1 = GetNumObjects(p1, p3);
-            }
-            break;
-
-          case 0x1007:  // GetObjectHandles
-            if (p2) 
-            { return_code = 0x2014; // spec by format unsupported
-            } else 
-            { 
-              TRANSMIT(GetObjectHandles(p1, p3));
-            }
-            break;
-
-          case 0x1008:  // GetObjectInfo
-            TRANSMIT(GetObjectInfo(p1));
-            break;
-
-          case 0x1009:  // GetObject
-            TRANSMIT(GetObject(p1));
-            break;
-
-          case 0x100B:  // DeleteObject
-              if (CONTAINER->params[1]) {
-                return_code = 0x2014; // spec by format unsupported
-              } else {
-                if (!storage_->DeleteObject(CONTAINER->params[0])) {
-                  return_code = 0x2012; // partial deletion
-                }
+            case 0x1006:  // GetNumObjects
+              if (CONTAINER->params[1]) 
+              {
+                  return_code = 0x2014; // spec by format unsupported
+              } else 
+              {
+                  p1 = GetNumObjects(p1, p3);
               }
               break;
 
-          case 0x100C:  // SendObjectInfo
-              if (!p1) p1 = 1;
-              CONTAINER->params[2] = SendObjectInfo(p1, // storage
-                                                    p2); // parent
-
-              CONTAINER->params[1]=p2;
-              CONTAINER->len  = len = 12 + 3 * 4;
+            case 0x1007:  // GetObjectHandles
+              if (p2) 
+              { return_code = 0x2014; // spec by format unsupported
+              } else 
+              { 
+                TRANSMIT(GetObjectHandles(p1, p3));
+              }
               break;
 
-          case 0x100D:  // SendObject
-              SendObject();
-              CONTAINER->len  = len = 12;
+            case 0x1008:  // GetObjectInfo
+              TRANSMIT(GetObjectInfo(p1));
               break;
 
-          case 0x1014:  // GetDevicePropDesc
-              TRANSMIT(GetDevicePropDesc(p1));
+            case 0x1009:  // GetObject
+              TRANSMIT(GetObject(p1));
               break;
 
-          case 0x1015:  // GetDevicePropvalue
-              TRANSMIT(GetDevicePropValue(p1));
-              break;
+            case 0x100B:  // DeleteObject
+                if (CONTAINER->params[1]) {
+                  return_code = 0x2014; // spec by format unsupported
+                } else {
+                  if (!storage_->DeleteObject(CONTAINER->params[0])) {
+                    return_code = 0x2012; // partial deletion
+                  }
+                }
+                break;
 
-          case 0x1010:  // Reset
-              return_code = 0x2005;
-              break;
+            case 0x100C:  // SendObjectInfo
+                if (!p1) p1 = 1;
+                CONTAINER->params[2] = SendObjectInfo(p1, // storage
+                                                      p2); // parent
 
-          case 0x1019:  // MoveObject
-              return_code = moveObject(p1,p2,p3);
-              CONTAINER->len  = len = 12;
-              break;
+                CONTAINER->params[1]=p2;
+                CONTAINER->len  = len = 12 + 3 * 4;
+                break;
 
-          case 0x101A:  // CopyObject
-              return_code = copyObject(p1,p2,p3);
-              if(!return_code) 
-              { return_code=0x2005; CONTAINER->len  = len = 12; }
-              else
-              { p1 = return_code; return_code=0x2001; }
-              break;
+            case 0x100D:  // SendObject
+                SendObject();
+                CONTAINER->len  = len = 12;
+                break;
 
-          case 0x9801:  // getObjectPropsSupported
-              TRANSMIT(getObjectPropsSupported(p1));
-              break;
+            case 0x1014:  // GetDevicePropDesc
+                TRANSMIT(GetDevicePropDesc(p1));
+                break;
 
-          case 0x9802:  // getObjectPropDesc
-              TRANSMIT(getObjectPropDesc(p1,p2));
-              break;
+            case 0x1015:  // GetDevicePropvalue
+                TRANSMIT(GetDevicePropValue(p1));
+                break;
 
-          case 0x9803:  // getObjectPropertyValue
-              TRANSMIT(getObjectPropValue(p1,p2));
-              break;
+            case 0x1010:  // Reset
+                return_code = 0x2005;
+                break;
 
-          case 0x9804:  // setObjectPropertyValue
-              return_code = setObjectPropValue(p1,p2);
-              break;
+            case 0x1019:  // MoveObject
+                return_code = moveObject(p1,p2,p3);
+                CONTAINER->len  = len = 12;
+                break;
 
-          default:
-              return_code = 0x2005;  // operation not supported
-              break;
-        }
-        if(return_code)
-        {
-            CONTAINER->type=3;
-            CONTAINER->len=len;
-            CONTAINER->op=return_code;
-            CONTAINER->transaction_id=id;
-            CONTAINER->params[0]=p1;
-            #if DEBUG >1
-              printContainer(); // to switch on set debug to 2 at beginning of file
-            #endif
+            case 0x101A:  // CopyObject
+                return_code = copyObject(p1,p2,p3);
+                if(!return_code) 
+                { return_code=0x2005; CONTAINER->len  = len = 12; }
+                else
+                { p1 = return_code; return_code=0x2001; }
+                break;
 
-            memcpy(tx_data_buffer,rx_data_buffer,len);
-            push_packet(tx_data_buffer,len); // for acknowledge use rx_data_buffer
+            case 0x9801:  // getObjectPropsSupported
+                TRANSMIT(getObjectPropsSupported(p1));
+                break;
+
+            case 0x9802:  // getObjectPropDesc
+                TRANSMIT(getObjectPropDesc(p1,p2));
+                break;
+
+            case 0x9803:  // getObjectPropertyValue
+                TRANSMIT(getObjectPropValue(p1,p2));
+                break;
+
+            case 0x9804:  // setObjectPropertyValue
+                return_code = setObjectPropValue(p1,p2);
+                break;
+
+            default:
+                return_code = 0x2005;  // operation not supported
+                break;
+          }
+          if(return_code)
+          {
+              CONTAINER->type=3;
+              CONTAINER->len=len;
+              CONTAINER->op=return_code;
+              CONTAINER->transaction_id=id;
+              CONTAINER->params[0]=p1;
+              #if DEBUG >1
+                printContainer(); // to switch on set debug to 2 at beginning of file
+              #endif
+
+              memcpy(tx_data_buffer,rx_data_buffer,len);
+              push_packet(tx_data_buffer,len); // for acknowledge use rx_data_buffer
+          }
         }
       }
+#if 1
+      // this is a test and only a test.
+      
+      if (emLastStorageInfoChange > 250) {
+          if (storage_->get_FSCount()) {
+            last_storageInfoChanged_id++;
+            if (last_storageInfoChanged_id > storage_->get_FSCount()) last_storageInfoChanged_id = 1; 
+            MTPEvent event;
+            event.len = 16;
+            event.event_type = MTP_CONTAINER_TYPE_EVENT; // 4
+            event.event_code = MTP_EVENT_STORAGE_INFO_CHANGED;   // 6
+            event.session_id = sessionID_; // 8
+            event.handle = last_storageInfoChanged_id;    // 12
+            printf("EV: %d %x %x %x %x\n", event.len, event.event_type, 
+                event.event_code, event.session_id, event.handle);
+            usb_mtp_eventSend(&event, 100);
+            emLastStorageInfoChange = 0;
+          }
+      }
+#endif
     }
 
 #endif
