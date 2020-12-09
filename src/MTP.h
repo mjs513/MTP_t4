@@ -99,7 +99,7 @@ private:
 
   static EventResponder receive_eventresponder;
   static elapsedMillis receive_event_elaped_mills;
-  static const uint32_t EVENT_RESPONDER_CYCLE = 100; // lets try every 100ms
+  static const uint32_t EVENT_RESPONDER_CYCLE = 5; // lets try every 10ms
   uint32_t receive_count_remaining;
   static void receive_event_handler(EventResponderRef evref);
 #endif

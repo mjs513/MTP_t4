@@ -934,7 +934,12 @@ const uint16_t supported_events[] =
 
     int MTPD::pull_packet(uint8_t *data_buffer)
     {
-      while(!usb_mtp_available());
+      elapsedMillis em = 0; 
+      while(!usb_mtp_available() && (em < 5000));
+      if (em >= 5000) {
+        printf("*** MTPD::pull_packet timeout ***\n");
+        return -1; 
+      }
       return usb_mtp_recv(data_buffer,60);
     }
 
@@ -1200,6 +1205,7 @@ const uint16_t supported_events[] =
 
       //only need to do this once...
       receive_eventresponder.setContext((void*)this);
+      receive_eventresponder.attach(&MTPD::receive_event_handler);
 
       while((int)receive_count_remaining>0)
       { 
@@ -1207,12 +1213,18 @@ const uint16_t supported_events[] =
         // See if we can avoid doing lots of memory copy functions
         if ((receive_count_remaining >= MTP_RX_SIZE) && (disk_pos + MTP_RX_SIZE) <= DISK_BUFFER_SIZE) {
           // We should be able to pull it directly in to our current disk buffer. 
-          pull_packet(cur_disk_buffer+disk_pos);                  // read directly in.
+          if (pull_packet(cur_disk_buffer+disk_pos) != MTP_RX_SIZE) {
+            printf("sendObject pullpacket fail\n");
+            return false;
+          }                 // read directly in.
           receive_count_remaining -= MTP_RX_SIZE;
           disk_pos += MTP_RX_SIZE; 
         } else {
           // Get the next packet of data. 
-          pull_packet(rx_data_buffer);
+          if (pull_packet(rx_data_buffer) != MTP_RX_SIZE) {
+            printf("sendObject pullpacket fail\n");
+            return false;
+          }                 // read directly in.
 
           uint32_t bytes = min((uint32_t)MTP_RX_SIZE,receive_count_remaining);                                   // loimit at end
           uint32_t to_copy=min(bytes, DISK_BUFFER_SIZE-disk_pos);   // how many data to copy to disk buffer
@@ -1238,11 +1250,14 @@ const uint16_t supported_events[] =
             }
 
             // See if we have any remaining data to receive? 
-            if (receive_count_remaining) receive_eventresponder.attach(&receive_event_handler);
+            receive_event_elaped_mills = 0;
+            if (receive_count_remaining) {
+              receive_eventresponder.triggerEvent();
+            }
             elapsedMicros em = 0;
             size_t bytes_written = storage_->write((const char *)buffer_to_write, DISK_BUFFER_SIZE);
-            receive_eventresponder.detach();
-            printf("WR %u %u %u\n", DISK_BUFFER_SIZE, bytes_written, (uint32_t)em);
+            receive_eventresponder.clearEvent();
+            printf("WR %u %u %u %u\n", DISK_BUFFER_SIZE, bytes_written, receive_count_remaining, (uint32_t)em);
             if (bytes_written < DISK_BUFFER_SIZE) return false;
           }
         }
@@ -1252,7 +1267,7 @@ const uint16_t supported_events[] =
       {
         elapsedMicros em = 0;
         if(storage_->write((const char *)cur_disk_buffer, disk_pos)<disk_pos) return false;
-        printf("WR %u %u\n", DISK_BUFFER_SIZE, (uint32_t)em);
+        printf("WR %u %u %u\n", DISK_BUFFER_SIZE, receive_count_remaining, (uint32_t)em);
       }
       storage_->close();
       return true;
@@ -1262,15 +1277,20 @@ const uint16_t supported_events[] =
     EventResponder MTPD::receive_eventresponder;
     elapsedMillis MTPD::receive_event_elaped_mills;
   void MTPD::receive_event_handler(EventResponderRef evref) {
+    bool trigger_again = true;
     // we limit how often we actually call this. 
-    if (receive_event_elaped_mills < EVENT_RESPONDER_CYCLE) return;
+    if (receive_event_elaped_mills < EVENT_RESPONDER_CYCLE) {
+      evref.triggerEvent();  // no lets detch from here. 
+      return;
+    }
     // Get the mtpd object... 
     MTPD *pmtpd = (MTPD*)evref.getContext();
-
+    printf(".");
     // lets see if there is anything to receive? 
     if (usb_mtp_available()) {
       // Now read directly into our next output buffer. 
         // We should be able to pull it directly in to our current disk buffer. 
+      printf("+");  
       usb_mtp_recv(pmtpd->cur_disk_buffer+pmtpd->disk_pos, 60);                  // read directly in.
       if (pmtpd->receive_count_remaining >= MTP_RX_SIZE) {
         pmtpd->receive_count_remaining -= MTP_RX_SIZE;
@@ -1280,13 +1300,14 @@ const uint16_t supported_events[] =
         pmtpd->receive_count_remaining = 0;
       }
 
-      // will we have room to read in another? 
       if ((pmtpd->disk_pos + MTP_RX_SIZE) > DISK_BUFFER_SIZE) {
-        evref.detach();  // no lets detch from here. 
+        printf("*");  
+        trigger_again = false;  // no lets detch from here. 
       }
     }
 
     receive_event_elaped_mills = 0; // clear out the timer. 
+    if (trigger_again)evref.triggerEvent();  // no lets detch from here. 
   }
 
 #else 
