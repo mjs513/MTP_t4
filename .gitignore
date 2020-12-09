@@ -1,2 +1,5 @@
 examples/mtp-logger/.vsteensy/**
 examples/mtp-test/.vsteensy/**
+examples/mtp-test/Compile.cmd
+*.sublime-project
+*.sublime-workspace

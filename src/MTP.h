@@ -23,8 +23,14 @@
 
 // modified for SDFS by WMXZ
 
+
 #ifndef MTP_H
 #define MTP_H
+
+#if defined(__IMXRT1062__)
+// experiment currently only for T4.x
+#define MTP_TEST_SEND_OBJECT_YIELD
+#endif
 
 #if !defined(USB_MTPDISK) && !defined(USB_MTPDISK_SERIAL)
   #error "You need to select USB Type: 'MTP Disk (Experimental)'"
@@ -34,6 +40,11 @@
 #include "usb_dev.h"
 
 #include "Storage.h"
+
+#ifdef MTP_TEST_SEND_OBJECT_YIELD
+#include <EventResponder.h>
+#endif
+
 // modify strings if needed (see MTP.cpp how they are used)
 #define MTP_MANUF "PJRC"
 #define MTP_MODEL "Teensy"
@@ -81,6 +92,18 @@ private:
   #define DISK_BUFFER_SIZE 8*1024
   uint8_t disk_buffer[DISK_BUFFER_SIZE] __attribute__ ((aligned(32)));
   uint32_t disk_pos=0;
+#ifdef MTP_TEST_SEND_OBJECT_YIELD
+  // BUGBUG make larger buffers static and DMAMEM? 
+  uint8_t disk_buffer2[DISK_BUFFER_SIZE] __attribute__ ((aligned(32)));
+  uint8_t *cur_disk_buffer;  // which buffer are we filling 1 or 2 ...
+
+  static EventResponder receive_eventresponder;
+  static elapsedMillis receive_event_elaped_mills;
+  static const uint32_t EVENT_RESPONDER_CYCLE = 100; // lets try every 100ms
+  uint32_t receive_count_remaining;
+  static void receive_event_handler(EventResponderRef evref);
+#endif
+
 
   int push_packet(uint8_t *data_buffer, uint32_t len);
   int fetch_packet(uint8_t *data_buffer);
