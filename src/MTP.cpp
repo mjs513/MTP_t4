@@ -1180,6 +1180,18 @@ const uint16_t supported_events[] =
     }
 
 #ifdef MTP_TEST_SEND_OBJECT_YIELD
+    // static data. 
+    EventResponder MTPD::receive_eventresponder;
+    elapsedMillis MTPD::receive_event_elaped_mills;
+    uint8_t  MTPD::big_buffer[BIG_BUFFER_SIZE] DMAMEM __attribute__ ((aligned(32)));
+    uint8_t *MTPD::buffer_receive_pointer;  // which buffer are we filling 1 or 2 ...
+    uint8_t *MTPD::buffer_write_file_pointer;
+    uint32_t MTPD::receive_count_remaining;
+    uint32_t MTPD::receive_disk_pos=0;
+    bool    MTPD::receive_write_active = false;
+
+
+
     bool MTPD::SendObject() 
     { 
       pull_packet(rx_data_buffer);
@@ -1187,123 +1199,136 @@ const uint16_t supported_events[] =
 //      printContainer(); 
 
       receive_count_remaining = ReadMTPHeader();
-      uint32_t index = sizeof(MTPHeader);
-  
-      digitalToggleFast(2);
+      uint32_t index = sizeof(MTPHeader);  
       printf("MTPD::SendObject: len:%u\n", receive_count_remaining);
 
-      digitalToggleFast(2);
 
       // Maybe first copy remaining data of first buffer into our diskbuffer; 
       uint32_t bytes = MTP_RX_SIZE - index;                     // how many data in usb-packet
       bytes = min(bytes,receive_count_remaining);                                   // loimit at end
       uint32_t to_copy=min(bytes, (uint32_t)DISK_BUFFER_SIZE);   // how many data to copy to disk buffer
-      memcpy(disk_buffer, rx_data_buffer + index,to_copy);
-      cur_disk_buffer = disk_buffer;                            // we are using the first buffer.
+      memcpy(big_buffer, rx_data_buffer + index,to_copy);
+      buffer_receive_pointer = big_buffer; 
+      buffer_write_file_pointer = big_buffer;
       receive_count_remaining -= to_copy;
-      disk_pos=to_copy;
-
+      receive_disk_pos=to_copy;
+      receive_write_active = false;
       //only need to do this once...
+      uint32_t total_bytes_written = 0;
       receive_eventresponder.setContext((void*)this);
       receive_eventresponder.attach(&MTPD::receive_event_handler);
 
-      while((int)receive_count_remaining>0)
+      // loop while we have more data to receive or full buffers to write. 
+      elapsedMillis time_since_last_activity = 0;
+      while(((int)receive_count_remaining>0) || (buffer_receive_pointer != buffer_write_file_pointer))
       { 
-        // First lets see if we have room to read in whole RX into our current buffer.
-        // See if we can avoid doing lots of memory copy functions
-        if ((receive_count_remaining >= MTP_RX_SIZE) && (disk_pos + MTP_RX_SIZE) <= DISK_BUFFER_SIZE) {
-          // We should be able to pull it directly in to our current disk buffer. 
-          if (pull_packet(cur_disk_buffer+disk_pos) != MTP_RX_SIZE) {
-            printf("sendObject pullpacket fail\n");
-            return false;
-          }                 // read directly in.
-          receive_count_remaining -= MTP_RX_SIZE;
-          disk_pos += MTP_RX_SIZE; 
-        } else {
-          // Get the next packet of data. 
-          if (pull_packet(rx_data_buffer) != MTP_RX_SIZE) {
-            printf("sendObject pullpacket fail\n");
-            return false;
-          }                 // read directly in.
+        // See if we have a full write size buffer to output.
 
-          uint32_t bytes = min((uint32_t)MTP_RX_SIZE,receive_count_remaining);                                   // loimit at end
-          uint32_t to_copy=min(bytes, DISK_BUFFER_SIZE-disk_pos);   // how many data to copy to disk buffer
-          
-          // Lets first fill our current buffer. 
-          memcpy(cur_disk_buffer+disk_pos, rx_data_buffer,to_copy);
-          disk_pos += to_copy;
-          receive_count_remaining -= to_copy;
-          //printf("a %d %d %d %d %d\n", receive_count_remaining,disk_pos,bytes,index,to_copy);
-          //
-          if(disk_pos==DISK_BUFFER_SIZE)
-          {
-            // Lets setup to copy the remaining data into our second buffer.
-            uint8_t *buffer_to_write = cur_disk_buffer;
-            if (bytes != to_copy) {
-               cur_disk_buffer = (cur_disk_buffer == disk_buffer)? disk_buffer2 : disk_buffer;
-               bytes -= to_copy;  // how many left
-               memcpy (cur_disk_buffer, rx_data_buffer+to_copy, bytes);
-               disk_pos = bytes;
-               receive_count_remaining -= bytes; 
-            } else {
-              disk_pos = 0; // exact size
-            }
-
-            // See if we have any remaining data to receive? 
-            receive_event_elaped_mills = 0;
-            if (receive_count_remaining) {
-              receive_eventresponder.triggerEvent();
-            }
-            elapsedMicros em = 0;
-            size_t bytes_written = storage_->write((const char *)buffer_to_write, DISK_BUFFER_SIZE);
-            receive_eventresponder.clearEvent();
-            printf("WR %u %u %u %u\n", DISK_BUFFER_SIZE, bytes_written, receive_count_remaining, (uint32_t)em);
-            if (bytes_written < DISK_BUFFER_SIZE) return false;
+        // See if we have any remaining data to receive? 
+        while(buffer_receive_pointer != buffer_write_file_pointer) {
+          // See if we need to allow the yield process to run.
+          receive_write_active = true;
+          receive_event_elaped_mills = 0;
+          if (receive_count_remaining) {
+            receive_eventresponder.triggerEvent();
           }
+          elapsedMicros em = 0;
+          digitalWriteFast(1, HIGH);
+          size_t bytes_written = storage_->write((const char *)buffer_write_file_pointer, DISK_BUFFER_SIZE);
+          digitalWriteFast(1, LOW);
+          printf("WR %u %u %u %u %u\n", DISK_BUFFER_SIZE, bytes_written, receive_count_remaining, total_bytes_written, (uint32_t)em);
+          if (bytes_written < DISK_BUFFER_SIZE) return false;
+          buffer_write_file_pointer += DISK_BUFFER_SIZE;
+          if (buffer_write_file_pointer >= (big_buffer+BIG_BUFFER_SIZE)) buffer_write_file_pointer = big_buffer;
+          total_bytes_written += DISK_BUFFER_SIZE;
+          time_since_last_activity = 0;   //  clear out time 
         }
+        
+        if ((int)receive_count_remaining==0) break;
+        if (time_since_last_activity > 10000) break; // Looks like things have stopped responding?  
+
+
+        // Lets have the event code do all of the reading. 
+        receive_write_active = false;
+        receive_eventresponder.triggerEvent();
+        yield();
       }
-      //printf("receive_count_remaining %d\n",disk_pos);
-      if(disk_pos)
-      {
-        elapsedMicros em = 0;
-        if(storage_->write((const char *)cur_disk_buffer, disk_pos)<disk_pos) return false;
-        printf("WR %u %u %u\n", DISK_BUFFER_SIZE, receive_count_remaining, (uint32_t)em);
-      }
-      storage_->close();
-      return true;
+
+      receive_eventresponder.clearEvent();
+      if (receive_count_remaining == 0) {
+        if(receive_disk_pos)
+        {
+          elapsedMicros em = 0;
+          digitalWriteFast(3, HIGH);
+          if(storage_->write((const char *)buffer_write_file_pointer, receive_disk_pos)<receive_disk_pos) return false;
+          digitalWriteFast(3, LOW);
+          printf("WR %u %u %u %u\n", receive_disk_pos, receive_count_remaining, total_bytes_written, (uint32_t)em);
+          total_bytes_written += receive_disk_pos;
+        }
+        storage_->close();
+        printf("CL %u\n", total_bytes_written);
+        return true;
+      } else {
+         // We had some form of timeout... 
+        printf("*** SendObject TImeout ***\n");
+        storage_->close();
+        printf("CL %u\n", total_bytes_written);
+        return false;
+      }  
     }
 
-    // static data. 
-    EventResponder MTPD::receive_eventresponder;
-    elapsedMillis MTPD::receive_event_elaped_mills;
   void MTPD::receive_event_handler(EventResponderRef evref) {
     bool trigger_again = true;
     // we limit how often we actually call this. 
-    if (receive_event_elaped_mills < EVENT_RESPONDER_CYCLE) {
+    if (receive_write_active && (receive_event_elaped_mills < EVENT_RESPONDER_CYCLE)) {
       evref.triggerEvent();  // no lets detch from here. 
       return;
     }
     // Get the mtpd object... 
+    if (!receive_count_remaining) {
+      printf("$");
+      return; // bail we have no more to read
+    }
     MTPD *pmtpd = (MTPD*)evref.getContext();
     printf(".");
     // lets see if there is anything to receive? 
     if (usb_mtp_available()) {
       // Now read directly into our next output buffer. 
         // We should be able to pull it directly in to our current disk buffer. 
+      digitalToggleFast(2);
       printf("+");  
-      usb_mtp_recv(pmtpd->cur_disk_buffer+pmtpd->disk_pos, 60);                  // read directly in.
-      if (pmtpd->receive_count_remaining >= MTP_RX_SIZE) {
-        pmtpd->receive_count_remaining -= MTP_RX_SIZE;
-        pmtpd->disk_pos += MTP_RX_SIZE; 
+      // make sure we can read all of this in one chunk, else will need to copy memory
+      uint32_t cbytes = min(receive_count_remaining, (uint32_t)MTP_RX_SIZE);
+      if ((buffer_receive_pointer+receive_disk_pos+MTP_RX_SIZE) <= (big_buffer + BIG_BUFFER_SIZE)) {
+        usb_mtp_recv(buffer_receive_pointer+receive_disk_pos, 60);                  // read directly in.
+        receive_count_remaining -= cbytes;
+        receive_disk_pos += cbytes; 
+        if (receive_disk_pos >=  DISK_BUFFER_SIZE) {
+          receive_disk_pos -= DISK_BUFFER_SIZE;
+          buffer_receive_pointer += DISK_BUFFER_SIZE;
+        }
       } else {
-        pmtpd->disk_pos += pmtpd->receive_count_remaining; 
-        pmtpd->receive_count_remaining = 0;
+        usb_mtp_recv(pmtpd->rx_data_buffer, 60);                  // read directly in.
+        uint32_t to_copy=min(cbytes, DISK_BUFFER_SIZE-receive_disk_pos);   // how many data to copy to disk buffer
+        memcpy(buffer_receive_pointer+receive_disk_pos, pmtpd->rx_data_buffer,to_copy);
+        receive_disk_pos += to_copy;
+        receive_count_remaining -= cbytes;
+        if (cbytes != to_copy) {
+          buffer_receive_pointer = big_buffer;
+          cbytes -= to_copy;  // how many left
+          memcpy (buffer_receive_pointer, pmtpd->rx_data_buffer+to_copy, cbytes);
+          receive_disk_pos = cbytes;
+        }
+      }  
+
+      // Now see if we think we can fit a full next one or not..
+      if (buffer_receive_pointer == buffer_write_file_pointer) trigger_again = false;
+      else if ((receive_disk_pos + MTP_RX_SIZE > DISK_BUFFER_SIZE)) {
+        uint8_t *pb = buffer_receive_pointer + DISK_BUFFER_SIZE;
+        if (pb >= (big_buffer + BIG_BUFFER_SIZE)) pb = big_buffer;
+        if (pb == buffer_write_file_pointer) trigger_again = false;
       }
 
-      if ((pmtpd->disk_pos + MTP_RX_SIZE) > DISK_BUFFER_SIZE) {
-        printf("*");  
-        trigger_again = false;  // no lets detch from here. 
-      }
     }
 
     receive_event_elaped_mills = 0; // clear out the timer. 
@@ -1322,10 +1347,8 @@ const uint16_t supported_events[] =
       disk_pos=0;
   
       // experiment to try setting the size of file up front
-      digitalToggleFast(2);
       printf("MTPD::SendObject: len:%u\n", len);
 
-      digitalToggleFast(2);
 
       
       while((int)len>0)
@@ -1392,7 +1415,6 @@ const uint16_t supported_events[] =
 
     void MTPD::loop(void)
     { if(!usb_mtp_available()) return;
-      digitalWriteFast(3, HIGH);
       if(fetch_packet(rx_data_buffer))
       { printContainer(); // to switch on set debug to 1 at beginning of file
 
@@ -1545,7 +1567,6 @@ const uint16_t supported_events[] =
             push_packet(tx_data_buffer,len); // for acknowledge use rx_data_buffer
         }
       }
-      digitalWriteFast(3, LOW);
     }
 
 #endif

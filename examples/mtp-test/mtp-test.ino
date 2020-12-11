@@ -206,6 +206,8 @@ void storage_configure()
 
 void setup()
 { 
+  pinMode(2, OUTPUT);
+  pinMode(1, OUTPUT);
   #if defined(USB_MTPDISK_SERIAL) 
     while(!Serial); // comment if you do not want to wait for terminal
   #else

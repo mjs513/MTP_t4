@@ -94,13 +94,17 @@ private:
   uint32_t disk_pos=0;
 #ifdef MTP_TEST_SEND_OBJECT_YIELD
   // BUGBUG make larger buffers static and DMAMEM? 
-  uint8_t disk_buffer2[DISK_BUFFER_SIZE] __attribute__ ((aligned(32)));
-  uint8_t *cur_disk_buffer;  // which buffer are we filling 1 or 2 ...
+  static const uint32_t BIG_BUFFER_SIZE = (DISK_BUFFER_SIZE * 8);
+  static uint8_t big_buffer[BIG_BUFFER_SIZE] __attribute__ ((aligned(32)));
+  static uint8_t *buffer_receive_pointer;  // which buffer are we filling 1 or 2 ...
+  static uint8_t *buffer_write_file_pointer;
 
   static EventResponder receive_eventresponder;
   static elapsedMillis receive_event_elaped_mills;
-  static const uint32_t EVENT_RESPONDER_CYCLE = 5; // lets try every 10ms
-  uint32_t receive_count_remaining;
+  static const uint32_t EVENT_RESPONDER_CYCLE = 8; // lets try every 10ms
+  static uint32_t receive_count_remaining;
+  static uint32_t receive_disk_pos;
+  static bool receive_write_active;
   static void receive_event_handler(EventResponderRef evref);
 #endif
 
