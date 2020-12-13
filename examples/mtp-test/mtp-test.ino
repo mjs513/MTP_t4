@@ -6,9 +6,11 @@
 
 #define USE_SD  1         // SDFAT based SDIO and SPI
 #define USE_LFS_RAM 1     // T4.1 PSRAM (or RAM)
+#define USE_LFS_SLOW_RAM 1 // like RAM but made to be SLOOOWWW
 #define USE_LFS_QSPI 1    // T4.1 QSPI
 #define USE_LFS_PROGM 1   // T4.4 Progam Flash
 #define USE_LFS_SPI 1     // SPI Flash
+
 
 #if USE_LFS_RAM==1 ||  USE_LFS_PROGM==1 || USE_LFS_QSPI==1 || USE_LFS_SPI==1
   #include "LittleFS.h"
@@ -56,6 +58,43 @@ SDClass sdx[nsd];
   const int nfs_ram = sizeof(lfs_ram_str)/sizeof(const char *);
 
   LittleFS_RAM ramfs[nfs_ram]; 
+#endif
+
+#if USE_LFS_SLOW_RAM == 1 // like RAM but made to be SLOOOWWW
+  const char *slfs_ram_str[]={"SLOW_RAM"};     // edit to reflect your configuration
+  const int slfs_ram_size[] = {2'000'000}; // edit to reflect your configuration
+  const int snfs_ram = sizeof(slfs_ram_str)/sizeof(const char *);
+
+  class LittleFS_SLOW_RAM : public LittleFS_RAM
+  {
+  public:
+    LittleFS_SLOW_RAM() : LittleFS_RAM() { }
+    static uint32_t    WRITE_TIME_MS;  // time for writes to take. 
+
+    bool begin(uint32_t size) {
+      bool fRet = LittleFS_RAM::begin(size);
+
+      // Lets overwrite the parent classes prog function
+      parent_static_prog = config.prog; // remember the prevoius one. 
+      config.prog = &static_prog;
+      return fRet;
+    }
+
+    private:
+      static int (*parent_static_prog)(const struct lfs_config *c, lfs_block_t block, lfs_off_t offset, const void *buffer, lfs_size_t size);
+      static int static_prog(const struct lfs_config *c, lfs_block_t block,
+            lfs_off_t offset, const void *buffer, lfs_size_t size) {
+        elapsedMillis em = 0;
+        int ret = (*parent_static_prog)(c, block, offset, buffer, size);
+        int delay_time = (int)(WRITE_TIME_MS - em);
+        if (delay_time > 0) delay(delay_time);
+        return ret;
+      }
+  };
+
+  uint32_t LittleFS_SLOW_RAM::WRITE_TIME_MS = 2;
+  int (*LittleFS_SLOW_RAM::parent_static_prog)(const struct lfs_config *c, lfs_block_t block, lfs_off_t offset, const void *buffer, lfs_size_t size) = nullptr;
+  LittleFS_SLOW_RAM sramfs[snfs_ram]; 
 #endif
 
 #if USE_LFS_QSPI==1
@@ -142,6 +181,22 @@ void storage_configure()
         uint64_t totalSize = ramfs[ii].totalSize();
         uint64_t usedSize  = ramfs[ii].usedSize();
         Serial.printf("RAM Storage %d %s ",ii,lfs_ram_str[ii]); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
+      }
+    }
+
+    #endif
+    #if USE_LFS_SLOW_RAM==1
+    for(int ii=0; ii<snfs_ram;ii++)
+    {
+      if(!sramfs[ii].begin(slfs_ram_size[ii])) 
+      { Serial.printf("Slow Ram Storage %d %s failed or missing",ii,slfs_ram_str[ii]); Serial.println();
+      }
+      else
+      {
+        storage.addFilesystem(sramfs[ii], slfs_ram_str[ii]);
+        uint64_t totalSize = sramfs[ii].totalSize();
+        uint64_t usedSize  = sramfs[ii].usedSize();
+        Serial.printf("Slow RAM Storage %d %s ",ii,slfs_ram_str[ii]); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
       }
     }
     #endif

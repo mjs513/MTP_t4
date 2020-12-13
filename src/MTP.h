@@ -89,23 +89,23 @@ private:
   uint8_t rx_data_buffer[MTP_RX_SIZE] __attribute__ ((aligned(32)));
   uint8_t tx_data_buffer[MTP_TX_SIZE] __attribute__ ((aligned(32)));
 
-  #define DISK_BUFFER_SIZE 8*1024
+  #define DISK_BUFFER_SIZE 4*1024
   uint8_t disk_buffer[DISK_BUFFER_SIZE] __attribute__ ((aligned(32)));
   uint32_t disk_pos=0;
 #ifdef MTP_TEST_SEND_OBJECT_YIELD
   // BUGBUG make larger buffers static and DMAMEM? 
-  static const uint32_t BIG_BUFFER_SIZE = (DISK_BUFFER_SIZE * 8);
+  static const uint32_t BIG_BUFFER_SIZE = (DISK_BUFFER_SIZE * 3);  // big enough to double buffer. 
   static uint8_t big_buffer[BIG_BUFFER_SIZE] __attribute__ ((aligned(32)));
   static uint8_t *buffer_receive_pointer;  // which buffer are we filling 1 or 2 ...
   static uint8_t *buffer_write_file_pointer;
 
   static EventResponder receive_eventresponder;
   static elapsedMillis receive_event_elaped_mills;
-  static const uint32_t EVENT_RESPONDER_CYCLE = 8; // lets try every 10ms
+  static const uint32_t EVENT_RESPONDER_CYCLE = 2; // lets try every 2
   static uint32_t receive_count_remaining;
   static uint32_t receive_disk_pos;
-  static bool receive_write_active;
   static void receive_event_handler(EventResponderRef evref);
+  bool checkAndReceiveNextUSBBuffer();
 #endif
 
 

@@ -42,7 +42,7 @@
 #include "usb_names.h"
 extern struct usb_string_descriptor_struct usb_string_serial_number; 
 
-#define DEBUG 1
+#define DEBUG 0
 #if DEBUG>0
   #define printf(...) Serial.printf(__VA_ARGS__)
 #else
@@ -1188,7 +1188,6 @@ const uint16_t supported_events[] =
     uint8_t *MTPD::buffer_write_file_pointer;
     uint32_t MTPD::receive_count_remaining;
     uint32_t MTPD::receive_disk_pos=0;
-    bool    MTPD::receive_write_active = false;
 
 
 
@@ -1212,7 +1211,6 @@ const uint16_t supported_events[] =
       buffer_write_file_pointer = big_buffer;
       receive_count_remaining -= to_copy;
       receive_disk_pos=to_copy;
-      receive_write_active = false;
       //only need to do this once...
       uint32_t total_bytes_written = 0;
       receive_eventresponder.setContext((void*)this);
@@ -1227,12 +1225,13 @@ const uint16_t supported_events[] =
         // See if we have any remaining data to receive? 
         while(buffer_receive_pointer != buffer_write_file_pointer) {
           // See if we need to allow the yield process to run.
-          receive_write_active = true;
           receive_event_elaped_mills = 0;
           if (receive_count_remaining) {
             receive_eventresponder.triggerEvent();
           }
+          #if DEBUG>0
           elapsedMicros em = 0;
+          #endif
           digitalWriteFast(1, HIGH);
           size_t bytes_written = storage_->write((const char *)buffer_write_file_pointer, DISK_BUFFER_SIZE);
           digitalWriteFast(1, LOW);
@@ -1246,11 +1245,8 @@ const uint16_t supported_events[] =
         
         if ((int)receive_count_remaining==0) break;
         if (time_since_last_activity > 10000) break; // Looks like things have stopped responding?  
-
-
-        // Lets have the event code do all of the reading. 
-        receive_write_active = false;
-        receive_eventresponder.triggerEvent();
+        receive_eventresponder.clearEvent();    // Lets turn off the event reponser
+        checkAndReceiveNextUSBBuffer();         // and call off to see if any USB buffers have been received.
         yield();
       }
 
@@ -1258,7 +1254,9 @@ const uint16_t supported_events[] =
       if (receive_count_remaining == 0) {
         if(receive_disk_pos)
         {
+          #if DEBUG>0
           elapsedMicros em = 0;
+          #endif
           digitalWriteFast(3, HIGH);
           if(storage_->write((const char *)buffer_write_file_pointer, receive_disk_pos)<receive_disk_pos) return false;
           digitalWriteFast(3, LOW);
@@ -1277,26 +1275,22 @@ const uint16_t supported_events[] =
       }  
     }
 
-  void MTPD::receive_event_handler(EventResponderRef evref) {
-    bool trigger_again = true;
-    // we limit how often we actually call this. 
-    if (receive_write_active && (receive_event_elaped_mills < EVENT_RESPONDER_CYCLE)) {
-      evref.triggerEvent();  // no lets detch from here. 
-      return;
-    }
-    // Get the mtpd object... 
+  bool MTPD::checkAndReceiveNextUSBBuffer() {
     if (!receive_count_remaining) {
       printf("$");
-      return; // bail we have no more to read
+      return false; // bail we have no more to read
     }
-    MTPD *pmtpd = (MTPD*)evref.getContext();
-    printf(".");
+    bool trigger_again = true;
+    static uint32_t debug_count_of_dots = 0;
+    if (++debug_count_of_dots < 16) printf(".");
+    else if ((debug_count_of_dots == 16) || !(debug_count_of_dots & 0x3f)) printf(":");
     // lets see if there is anything to receive? 
     if (usb_mtp_available()) {
       // Now read directly into our next output buffer. 
         // We should be able to pull it directly in to our current disk buffer. 
       digitalToggleFast(2);
       printf("+");  
+      debug_count_of_dots = 0;
       // make sure we can read all of this in one chunk, else will need to copy memory
       uint32_t cbytes = min(receive_count_remaining, (uint32_t)MTP_RX_SIZE);
       if ((buffer_receive_pointer+receive_disk_pos+MTP_RX_SIZE) <= (big_buffer + BIG_BUFFER_SIZE)) {
@@ -1308,15 +1302,15 @@ const uint16_t supported_events[] =
           buffer_receive_pointer += DISK_BUFFER_SIZE;
         }
       } else {
-        usb_mtp_recv(pmtpd->rx_data_buffer, 60);                  // read directly in.
+        usb_mtp_recv(rx_data_buffer, 60);                  // read directly in.
         uint32_t to_copy=min(cbytes, DISK_BUFFER_SIZE-receive_disk_pos);   // how many data to copy to disk buffer
-        memcpy(buffer_receive_pointer+receive_disk_pos, pmtpd->rx_data_buffer,to_copy);
+        memcpy(buffer_receive_pointer+receive_disk_pos, rx_data_buffer,to_copy);
         receive_disk_pos += to_copy;
         receive_count_remaining -= cbytes;
         if (cbytes != to_copy) {
           buffer_receive_pointer = big_buffer;
           cbytes -= to_copy;  // how many left
-          memcpy (buffer_receive_pointer, pmtpd->rx_data_buffer+to_copy, cbytes);
+          memcpy (buffer_receive_pointer, rx_data_buffer+to_copy, cbytes);
           receive_disk_pos = cbytes;
         }
       }  
@@ -1330,9 +1324,25 @@ const uint16_t supported_events[] =
       }
 
     }
+    return trigger_again;
+  }
+
+
+  void MTPD::receive_event_handler(EventResponderRef evref) {
+    // we limit how often we actually call this. 
+    if (receive_event_elaped_mills < EVENT_RESPONDER_CYCLE) {
+      evref.triggerEvent();  // no lets detch from here. 
+      return;
+    }
+    // Get the mtpd object... 
+    MTPD *pmtpd = (MTPD*)evref.getContext();
+
+    // now call off to function to process the data...
+    if (pmtpd->checkAndReceiveNextUSBBuffer()) {
+      evref.triggerEvent();  // lets setup to be called again.
+    }
 
     receive_event_elaped_mills = 0; // clear out the timer. 
-    if (trigger_again)evref.triggerEvent();  // no lets detch from here. 
   }
 
 #else 
