@@ -40,9 +40,9 @@
 #endif
 
 #include "usb_names.h"
-extern struct usb_string_descriptor_struct usb_string_serial_number; 
+//extern struct usb_string_descriptor_struct usb_string_serial_number; 
 
-#define DEBUG 0
+#define DEBUG 1
 #if DEBUG>0
   #define printf(...) Serial.printf(__VA_ARGS__)
 #else
@@ -200,16 +200,16 @@ const uint16_t supported_events[] =
   {
 //    MTP_EVENT_UNDEFINED                         ,//0x4000
 //    MTP_EVENT_CANCEL_TRANSACTION                ,//0x4001
-//    MTP_EVENT_OBJECT_ADDED                      ,//0x4002
-//    MTP_EVENT_OBJECT_REMOVED                    ,//0x4003
-//    MTP_EVENT_STORE_ADDED                       ,//0x4004
-//    MTP_EVENT_STORE_REMOVED                     ,//0x4005
+    MTP_EVENT_OBJECT_ADDED                      ,//0x4002
+    MTP_EVENT_OBJECT_REMOVED                    ,//0x4003
+    MTP_EVENT_STORE_ADDED                       ,//0x4004
+    MTP_EVENT_STORE_REMOVED                     ,//0x4005
 //    MTP_EVENT_DEVICE_PROP_CHANGED               ,//0x4006
-//    MTP_EVENT_OBJECT_INFO_CHANGED               ,//0x4007
+    MTP_EVENT_OBJECT_INFO_CHANGED               ,//0x4007
 //    MTP_EVENT_DEVICE_INFO_CHANGED               ,//0x4008
 //    MTP_EVENT_REQUEST_OBJECT_TRANSFER           ,//0x4009
 //    MTP_EVENT_STORE_FULL                        ,//0x400A
-//    MTP_EVENT_DEVICE_RESET                      ,//0x400B
+    MTP_EVENT_DEVICE_RESET                      ,//0x400B
 //    MTP_EVENT_STORAGE_INFO_CHANGED              ,//0x400C
 //    MTP_EVENT_CAPTURE_COMPLETE                  ,//0x400D
 //    MTP_EVENT_UNREPORTED_STATUS                 ,//0x400E
@@ -221,7 +221,9 @@ const uint16_t supported_events[] =
   const int supported_event_num = sizeof(supported_events)/sizeof(supported_events[0]);
 
  uint32_t sessionID_;
-
+#if USE_EVENTS==1
+bool MTPD::usb_events_init_ = 0;
+#endif
 // MTP Responder.
 /*
   struct MTPHeader {
@@ -245,8 +247,10 @@ const uint16_t supported_events[] =
   void MTPD::write32(uint32_t x) { write((char*)&x, sizeof(x)); }
   void MTPD::write64(uint64_t x) { write((char*)&x, sizeof(x)); }
 
-#define Store2Storage(x) (x+1)
-#define Storage2Store(x) (x-1)
+//#define Store2Storage(x) (x+1)
+//#define Storage2Store(x) (x-1)
+#define Store2Storage(x) (((x)+1) | 0x10000000ul)
+#define Storage2Store(x) (((x) & 0xefffffff) -1)
 
   void MTPD::writestring(const char* str) {
     if (*str) 
@@ -292,7 +296,11 @@ const uint16_t supported_events[] =
     strlcat(buf, " / MTP " MTP_VERS, sizeof(buf) );
     writestring( buf );    
     
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+    // the wString[i] gives compiler warning. 
     for (size_t i=0; i<10; i++) buf[i] = usb_string_serial_number.wString[i];
+#pragma GCC diagnostic pop
     writestring(buf);    
   }
 
@@ -783,6 +791,10 @@ const uint16_t supported_events[] =
 
   void MTPD::loop(void) 
   {
+    #if USE_EVENTS==1
+    if(!usb_events_init_) usb_init_events();
+    #endif
+
     usb_packet_t *receive_buffer;
     if ((receive_buffer = usb_rx(MTP_RX_ENDPOINT))) {
       printContainer();
@@ -928,6 +940,10 @@ const uint16_t supported_events[] =
 
     int MTPD::push_packet(uint8_t *data_buffer,uint32_t len)
     {
+      printf(">> %04x: ", len);
+      uint8_t dump_len = min (len, (uint32_t)32);
+      for (uint8_t i = 0; i < dump_len; i++) printf(" %02X", data_buffer[i]);
+      printf("\n");
       while(usb_mtp_send(data_buffer,len,60)<=0) ;
       return 1;
     }
@@ -940,12 +956,20 @@ const uint16_t supported_events[] =
         printf("*** MTPD::pull_packet timeout ***\n");
         return -1; 
       }
-      return usb_mtp_recv(data_buffer,60);
+      int ret_val =  usb_mtp_recv(data_buffer,60);
+      printf("<< %d:", ret_val);
+      for (uint8_t i = 0; i < 32; i++) printf(" %02X", data_buffer[i]);
+      printf("\n");
+      return ret_val;
     }
 
     int MTPD::fetch_packet(uint8_t *data_buffer)
     {
-      return usb_mtp_recv(data_buffer,60);
+      int ret_val =  usb_mtp_recv(data_buffer,60);
+      printf("<< %d:", ret_val);
+      for (uint8_t i = 0; i < 32; i++) printf(" %02X", data_buffer[i]);
+      printf("\n");
+      return ret_val;
     }
 
     void MTPD::write(const char *data, int len) 
@@ -1578,51 +1602,178 @@ const uint16_t supported_events[] =
         }
       }
     }
+  
+  #if USE_EVENTS==1
 
-#endif
+  #include "usb_mtp.h"
+  extern "C"
+  {
+    static transfer_t tx_event_transfer[1] __attribute__ ((used, aligned(32)));
+    static uint8_t tx_event_buffer[MTP_EVENT_SIZE] __attribute__ ((used, aligned(32)));
 
-#if 0
-const uint32_t EVENT_TIMEOUT=60;
+    //static transfer_t rx_event_transfer[1] __attribute__ ((used, aligned(32)));
+    //static uint8_t rx_event_buffer[MTP_EVENT_SIZE] __attribute__ ((used, aligned(32)));
 
-int MTPD::send_Event(uint16_t eventCode)
-{
-  MTPContainer event;
-	event.len = 12;
-	event.op =eventCode ;
-	event.type = MTP_CONTAINER_TYPE_EVENT; 
-	event.transaction_id=TID;
-	event.params[0]=0;
-	event.params[1]=0;
-	event.params[2]=0;
-	return 0;//usb_mtp_sendEvent((const void *) &event, event.len, EVENT_TIMEOUT);
-}
-int MTPD::send_Event(uint16_t eventCode, uint32_t p1)
-{
-  MTPContainer event;
-	event.len = 16;
-	event.op =eventCode ;
-	event.type = MTP_CONTAINER_TYPE_EVENT; 
-	event.transaction_id=TID;
-	event.params[0]=p1;
-	event.params[1]=0;
-	event.params[2]=0;
-	return 0;//usb_mtp_sendEvent((const void *) &event, event.len, EVENT_TIMEOUT);
-}
-int MTPD::send_Event(uint16_t eventCode, uint32_t p1, uint32_t p2)
-{
-  MTPContainer event;
-	event.len = 20;
-	event.op =eventCode ;
-	event.type = MTP_CONTAINER_TYPE_EVENT; 
-	event.transaction_id=TID;
-	event.params[0]=p1;
-	event.params[1]=p2;
-	event.params[2]=0;
-	return 0;//usb_mtp_sendEvent((const void *) &event, event.len, EVENT_TIMEOUT);
-}
+    static uint32_t mtp_txEventcount=0;
+    static uint32_t mtp_rxEventcount=0;
 
-int MTPD::send_addObjectEvent(uint32_t p1) {return send_Event(MTP_EVENT_OBJECT_ADDED, p1); }
-int MTPD::send_removeObjectEvent(uint32_t p1) {return send_Event(MTP_EVENT_OBJECT_REMOVED, p1); }
-int MTPD::send_StorageInfoChangedEvent(uint32_t p1) {return send_Event(MTP_EVENT_STORAGE_INFO_CHANGED, p1);}
+    uint32_t get_mtp_txEventcount() {return mtp_txEventcount; }
+    uint32_t get_mtp_rxEventcount() {return mtp_rxEventcount; }
+    
+    static void txEvent_event(transfer_t *t) { Serial.print("\n>>> tx");Serial.println(mtp_txEventcount++);}
+//    static void rxEvent_event(transfer_t *t) { Serial.print("rx");Serial.println(mtp_rxEventcount++);}
+
+  int  MTPD::usb_init_events(void)
+  {
+      usb_config_tx(MTP_EVENT_ENDPOINT, MTP_EVENT_SIZE, 0, txEvent_event);
+      printf("call MTPD::usb_init_events()");
+      //  
+      //usb_config_rx(MTP_EVENT_ENDPOINT, MTP_EVENT_SIZE, 0, rxEvent_event);
+      //usb_prepare_transfer(rx_event_transfer + 0, rx_event_buffer, MTP_EVENT_SIZE, 0);
+      //usb_receive(MTP_EVENT_ENDPOINT, rx_event_transfer + 0);
+      usb_events_init_ = true;
+      return 1;
+  }
+
+    static int usb_mtp_wait(transfer_t *xfer, uint32_t timeout)
+    {
+      printf("\n >>> call usb_mtp_wait\n");
+      uint32_t wait_begin_at = systick_millis_count;
+      while (1) {
+        if (!usb_configuration) return -1; // usb not enumerated by host
+        uint32_t status = usb_transfer_status(xfer);
+        if (!(status & 0x80)) break; // transfer descriptor ready
+        if (systick_millis_count - wait_begin_at > timeout) {
+          printf("\n >>> usb_mtp_wait error Timeout: %x\n", status);
+          return 0;
+        }
+        yield();
+      }
+      return 1;
+    }
+
+    int usb_mtp_recvEvent(void *buffer, uint32_t len, uint32_t timeout)
+    {
+      #if 0
+      int ret= usb_mtp_wait(rx_event_transfer, timeout); if(ret<=0) return ret;
+
+      memcpy(buffer, rx_event_buffer, len);
+      memset(rx_event_transfer, 0, sizeof(rx_event_transfer));
+
+      NVIC_DISABLE_IRQ(IRQ_USB1);
+      usb_prepare_transfer(rx_event_transfer + 0, rx_event_buffer, MTP_EVENT_SIZE, 0);
+      usb_receive(MTP_EVENT_ENDPOINT, rx_event_transfer + 0);
+      NVIC_ENABLE_IRQ(IRQ_USB1);
+      #endif
+      return MTP_EVENT_SIZE;
+    }
+
+    int usb_mtp_sendEvent(const void *buffer, uint32_t len, uint32_t timeout)
+    {
+      transfer_t *xfer = tx_event_transfer;
+      int ret= usb_mtp_wait(xfer, timeout); if(ret<=0) return ret;
+      printf("usb_mtp_sendEvent: %x %x\n", (uint32_t)buffer, len);
+      uint8_t *eventdata = tx_event_buffer;
+      memcpy(eventdata, buffer, len);
+      usb_prepare_transfer(xfer, eventdata, len, 0);
+      usb_transmit(MTP_EVENT_ENDPOINT, xfer);
+      return len;
+    }
+  }
+
+  const uint32_t EVENT_TIMEOUT=60;
+
+  int MTPD::send_Event(uint16_t eventCode)
+  {
+    MTPContainer event;
+    event.len = 12;
+    event.op =eventCode ;
+    event.type = MTP_CONTAINER_TYPE_EVENT; 
+    event.transaction_id=TID;
+    event.params[0]=0;
+    event.params[1]=0;
+    event.params[2]=0;
+    return usb_mtp_sendEvent((const void *) &event, event.len, EVENT_TIMEOUT);
+  }
+  int MTPD::send_Event(uint16_t eventCode, uint32_t p1)
+  {
+    MTPContainer event;
+    event.len = 16;
+    event.op =eventCode ;
+    event.type = MTP_CONTAINER_TYPE_EVENT; 
+    event.transaction_id=TID;
+    event.params[0]=p1;
+    event.params[1]=0;
+    event.params[2]=0;
+    return usb_mtp_sendEvent((const void *) &event, event.len, EVENT_TIMEOUT);
+  }
+  int MTPD::send_Event(uint16_t eventCode, uint32_t p1, uint32_t p2)
+  {
+    MTPContainer event;
+    event.len = 20;
+    event.op =eventCode ;
+    event.type = MTP_CONTAINER_TYPE_EVENT; 
+    event.transaction_id=TID;
+    event.params[0]=p1;
+    event.params[1]=p2;
+    event.params[2]=0;
+    return usb_mtp_sendEvent((const void *) &event, event.len, EVENT_TIMEOUT);
+  }
+
+  int MTPD::send_addObjectEvent(uint32_t p1) {return send_Event(MTP_EVENT_OBJECT_ADDED, p1); }
+  int MTPD::send_removeObjectEvent(uint32_t p1) {return send_Event(MTP_EVENT_OBJECT_REMOVED, p1); }
+  int MTPD::send_StorageInfoChangedEvent(uint32_t p1) {return send_Event(MTP_EVENT_STORAGE_INFO_CHANGED, p1);}
+  int MTPD::send_StorageRemovedEvent(uint32_t p1) {return send_Event(MTP_EVENT_STORE_REMOVED, p1);}
+  int MTPD::send_DeviceResetEvent(void) {return send_Event(MTP_EVENT_DEVICE_RESET);}
+  
+  bool MTPD::notifyFileCreated(FS *pfs, const char *pathname, bool is_directory, uint64_t file_size) 
+  {
+    bool node_added = false;
+    char filename[MAX_FILENAME_LEN];
+    uint32_t size, parent;
+    uint16_t store;
+    uint32_t handle = storage_->MapFileNameToIndex(pfs, pathname, is_directory, true, &node_added);
+    printf("notifyFileCreated: %x:%x maps to handle: %x\n", (uint32_t)pfs, pathname, handle);
+    if (handle != 0xFFFFFFFFUL) {
+      send_addObjectEvent(handle);
+      storage_->GetObjectInfo(handle, filename, &size, &parent, &store);
+
+      uint32_t storage = Store2Storage(store);
+      printf("  parent: %x storage: %x -> %x\n", parent, store, storage);
+      send_StorageInfoChangedEvent(storage);
+
+
+    }
+    return false;
+
+  }
+
+  bool MTPD::notifyFileRemoved(FS *pfs, const char *pathname) 
+  {
+    char filename[MAX_FILENAME_LEN];
+    uint32_t size, parent;
+    uint16_t store;
+    uint32_t handle = storage_->MapFileNameToIndex(pfs, pathname, false, false, nullptr);
+
+    printf("notifyFileRemoved: %x:%x maps to handle: %x\n", (uint32_t)pfs, pathname, handle);
+    if (handle != 0xFFFFFFFFUL) {
+      send_removeObjectEvent(handle);
+
+      storage_->GetObjectInfo(handle, filename, &size, &parent, &store);
+
+      uint32_t storage = Store2Storage(store);
+      printf("  parent: %x storage: %x -> %x\n", parent, store, storage);
+      printf("notify StorageInfoChanged : %x\n", storage);
+      send_StorageInfoChangedEvent(storage);
+    }
+    return false;
+
+  }
+
+  #endif
+
+
+
+
 #endif
 #endif

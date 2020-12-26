@@ -30,7 +30,7 @@
 
 #include "Storage.h"
 
-#define DEBUG 0
+#define DEBUG 1
 
 #if DEBUG>0
   #define USE_DBG_MACROS 1
@@ -166,6 +166,89 @@ void mtp_lock_storage(bool lock) {}
     mode_ = mode;
     mtp_lock_storage(false);
   }
+
+
+  uint32_t MTPStorage_SD::MapFileNameToIndex(FS *pfs, const char *pathname, bool folder, bool addLastNode, bool *node_added) 
+  {
+    // Map the pointer to FS to index
+    for (uint32_t storage = 0; storage < sd_getFSCount(); storage++) {
+      if (pfs == sd_getFS(storage)) return MapFileNameToIndex(storage, pathname, folder, addLastNode, node_added);
+    }
+    return 0xFFFFFFFFUL;  // not found. 
+
+  }
+
+  uint32_t MTPStorage_SD::MapFileNameToIndex(uint32_t storage, const char *pathname, bool folder, bool addLastNode, bool *node_added) 
+  {
+    Serial.printf("MTPStorage_SD::MapFileNameToIndex %u %s dir:%d add:%d\n", storage, pathname, folder, addLastNode);
+    // We will only walk as far as we have enumerated 
+    if (node_added) *node_added = false;
+    if (!index_generated || (pathname == nullptr) || (*pathname == '\0')) return 0xFFFFFFFFUL;  // no index 
+    char filename[MAX_FILENAME_LEN];
+    Record record = ReadIndexRecord(storage);
+    uint32_t index; 
+
+    printRecordIncludeName(storage, &record);
+    for (;;) {
+      if (!record.isdir || !record.scanned) return 0xFFFFFFFFUL;  // This storage has not been scanned. 
+      // Copy the nex section of file name
+      if(*pathname == '/') pathname++; // advance from the previous /
+      char *psz = filename;
+      while (*pathname && (*pathname != '/')) {
+        *psz++ = *pathname++;
+      }
+      *psz = '\0'; // terminate the string. 
+
+      // Now lets see if we can find this item in the record list. 
+      Serial.printf("Looking for: %s\n", filename);
+      index = record.child;
+      while(index) {
+        record = ReadIndexRecord(index);
+        printRecordIncludeName(index, &record);
+        if (strcmp(filename, record.name) == 0) break; // found a match
+        index = record.sibling;
+      }
+
+      if (index) {
+        // found a match. return it.
+        if (*pathname == '\0')  {
+          Serial.printf("Found Node: %d\n", index);
+          return index;
+        }
+
+      } else {
+        // item not found
+        Serial.println("Node Not found");
+
+        if ( (*pathname != '\0') || !addLastNode) return 0xFFFFFFFFUL;  // not found nor added
+
+        // need to add item
+        uint32_t parent = record.parent;
+        record = ReadIndexRecord(parent);
+        Record r; // could probably reuse the other one, but...
+        strlcpy(r.name, filename,MAX_FILENAME_LEN);
+        r.store = storage;
+        r.parent = parent;
+        r.child = 0;
+        r.sibling = record.child;
+        r.isdir = folder;
+        // New folder is empty, scanned = true.
+        r.scanned = 0;
+        index = record.child = AppendIndexRecord(r);
+        WriteIndexRecord(parent, record);
+
+        Serial.printf("New node created: %d\n", index);
+        record = ReadIndexRecord(index);
+        printRecordIncludeName(index, &record);
+        if (node_added) *node_added = true;
+        return index;
+      }
+
+    }
+    // 
+    return 0xFFFFFFFFUL;
+  }
+
 
   // MTP object handles should not change or be re-used during a session.
   // This would be easy if we could just have a list of all files in memory.
@@ -445,12 +528,16 @@ void mtp_lock_storage(bool lock) {}
   void MTPStorage_SD::dumpIndexList(void)
   { for(uint32_t ii=0; ii<index_entries_; ii++)
     { Record p = ReadIndexRecord(ii);
-      Serial.printf("%d: %d %d %d %d %d %s\n",ii, p.store, p.isdir,p.parent,p.sibling,p.child,p.name);
+      Serial.printf("%d: %d %d %d %d %d %d %s\n",ii, p.store, p.isdir,p.scanned,p.parent,p.sibling,p.child,p.name);
     }
   }
 
   void MTPStorage_SD::printRecord(int h, Record *p) 
-  { Serial.printf("%d: %d %d %d %d %d\n",h, p->store,p->isdir,p->parent,p->sibling,p->child); }
+  { Serial.printf("%d: %d %d %d %d %d %d\n",h, p->store,p->isdir,p->scanned,p->parent,p->sibling,p->child); }
+
+  void MTPStorage_SD::printRecordIncludeName(int h, Record *p) 
+  { Serial.printf("%d: %d %d %d %d %d %d %s\n",h, p->store,p->isdir,p->scanned,p->parent,p->sibling,p->child,p->name); }
+
   
 /*
  * //index list management for moving object around

@@ -52,6 +52,8 @@
 #define MTP_SERNR "1234"
 #define MTP_NAME  "Teensy"
 
+#define USE_EVENTS 1
+
 // MTP Responder.
 class MTPD {
 public:
@@ -75,6 +77,13 @@ private:
     uint32_t transaction_id; // 8
     uint32_t params[5];    // 12
   } __attribute__((__may_alias__)) ;
+
+  struct MTPEvent {
+    uint16_t event_code;   // 0
+    uint32_t session_id; // 2
+    uint32_t transaction_id; // 6
+    uint32_t params[3];    // 10
+  };
 
 #if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__)
   usb_packet_t *data_buffer_ = NULL;
@@ -168,7 +177,7 @@ private:
   void openSession(uint32_t id) ;
 
   uint32_t TID;  
-#if 0
+#if USE_EVENTS==1
   int send_Event(uint16_t eventCode);
   int send_Event(uint16_t eventCode, uint32_t p1);
   int send_Event(uint16_t eventCode, uint32_t p1, uint32_t p2);
@@ -178,10 +187,17 @@ public:
   void loop(void) ;
   void test(void) ;
 
-#if 0
+#if USE_EVENTS==1
   int send_addObjectEvent(uint32_t p1);
   int send_removeObjectEvent(uint32_t p1);
   int send_StorageInfoChangedEvent(uint32_t p1);
+  int send_StorageRemovedEvent(uint32_t p1);
+  int send_DeviceResetEvent(void);
+  static int usb_init_events(void);
+  static bool usb_events_init_;
+
+  bool notifyFileCreated(FS *pfs, const char *pathname, bool is_directory=false, uint64_t file_size=(uint64_t)-1); 
+  bool notifyFileRemoved(FS *pfs, const char *pathname); 
 #endif
 };
 

@@ -6,14 +6,16 @@
 
 #define USE_SD  1         // SDFAT based SDIO and SPI
 #define USE_LFS_RAM 1     // T4.1 PSRAM (or RAM)
-#define USE_LFS_SLOW_RAM 1 // like RAM but made to be SLOOOWWW
+//#define USE_LFS_SLOW_RAM 1 // like RAM but made to be SLOOOWWW
 #define USE_LFS_QSPI 1    // T4.1 QSPI
 #define USE_LFS_PROGM 1   // T4.4 Progam Flash
 #define USE_LFS_SPI 1     // SPI Flash
+#define USE_LFS_NAND 1
 
 
 #if USE_LFS_RAM==1 ||  USE_LFS_PROGM==1 || USE_LFS_QSPI==1 || USE_LFS_SPI==1
-  #include "LittleFS.h"
+  #include <LittleFS.h>
+  #include <LittleFS_NAND.h> 
 #endif
 
 #if defined(__IMXRT1062__)
@@ -113,13 +115,25 @@ SDClass sdx[nsd];
 #endif
 
 #if USE_LFS_SPI==1
-  const char *lfs_spi_str[]={"nand1","nand2","nand3","nand4"}; // edit to reflect your configuration
+#if USE_LFS_NAND==1
+  const char *lfs_spi_str[]={"spif-5","spif-6"}; // edit to reflect your configuration
+  const int lfs_cs[] = {5,6}; // edit to reflect your configuration
+  const int nfs_spi = sizeof(lfs_spi_str)/sizeof(const char *);
+  LittleFS_SPIFlash spifs[nfs_spi];
+
+  const char *nlfs_spi_str[]={"nspif-3","nspif-4"}; // edit to reflect your configuration
+  const int nlfs_cs[] = {3,4}; // edit to reflect your configuration
+  const int nnfs_spi = sizeof(nlfs_spi_str)/sizeof(const char *);
+  LittleFS_SPINAND nspifs[nnfs_spi];
+
+#else
+  const char *lfs_spi_str[]={"nspif-3","nspif-4"}; // edit to reflect your configuration
   const int lfs_cs[] = {3,4,5,6}; // edit to reflect your configuration
   const int nfs_spi = sizeof(lfs_spi_str)/sizeof(const char *);
 
 LittleFS_SPIFlash spifs[nfs_spi];
 #endif
-
+#endif
 
 MTPStorage_SD storage;
 MTPD    mtpd(&storage);
@@ -247,6 +261,21 @@ void storage_configure()
         Serial.printf("SPIFlash Storage %d %d %s ",ii,lfs_cs[ii],lfs_spi_str[ii]); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
       }
     }
+    #if USE_LFS_NAND==1
+    for(int ii=0; ii<nnfs_spi;ii++)
+    {
+      if(!nspifs[ii].begin(nlfs_cs[ii])) 
+      { Serial.printf("SPIFlash NAND Storage %d %d %s failed or missing",ii,nlfs_cs[ii],nlfs_spi_str[ii]); Serial.println();
+      }
+      else
+      {
+        storage.addFilesystem(nspifs[ii], nlfs_spi_str[ii]);
+        uint64_t totalSize = nspifs[ii].totalSize();
+        uint64_t usedSize  = nspifs[ii].usedSize();
+        Serial.printf("SPIFlash NAND Storage %d %d %s ",ii,nlfs_cs[ii],nlfs_spi_str[ii]); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
+      }
+    }
+    #endif
     #endif
 }
 /****  End of device specific change area  ****/
@@ -258,18 +287,24 @@ void storage_configure()
     *time = FS_TIME(hour(), minute(), second());
     *ms10 = second() & 1 ? 100 : 0;
   }
+elapsedMillis emLoop = 0;
 
 void setup()
 { 
   pinMode(2, OUTPUT);
   pinMode(1, OUTPUT);
   #if defined(USB_MTPDISK_SERIAL) 
-    while(!Serial); // comment if you do not want to wait for terminal
+    while(!Serial && millis() < 5000); // comment if you do not want to wait for terminal
   #else
-    while(!Serial.available()); // comment if you do not want to wait for terminal (otherwise press any key to continue)
+    while(!Serial.available() && millis() < 5000); // comment if you do not want to wait for terminal (otherwise press any key to continue)
   #endif
-  Serial.println("MTP_test");
+  Serial.begin(115200);
+  delay(250);
 
+  Serial.println("MTP_test");
+  Serial.flush();
+  delay(500);
+  mtpd.usb_init_events();
 #if !__has_include("usb_mtp.h")
   usb_mtp_configure();
 #endif
@@ -326,9 +361,118 @@ void setup()
   #endif
 
   Serial.println("\nSetup done");
+  emLoop = 0;
 }
 
+uint32_t last_storage_index = (uint32_t)-1;
+#define DEFAULT_FILESIZE 1024
 void loop()
 { 
+  #if 0
+  if (emLoop > 1000) {
+    emLoop = 0;
+    Serial.print("*");
+  }
+  #endif
   mtpd.loop();
+
+  if (Serial.available()) {
+    char pathname[MAX_FILENAME_LEN]; 
+    uint32_t storage_index = 0;
+    uint32_t file_size = 0;
+
+    // Should probably use Serial.parse ...
+    int cmd_char = Serial.read();
+
+    int ch = Serial.read();
+    while (ch == ' ') ch = Serial.read();
+    if (ch >= '0' && ch <= '9') {
+      while (ch >= '0' && ch <= '9') {
+        storage_index = storage_index*10 + ch - '0';
+        ch = Serial.read();
+      }
+      while (ch == ' ') ch = Serial.read();
+      last_storage_index = storage_index;
+    } else {
+      storage_index = last_storage_index;
+    }
+    char *psz = pathname;
+    while (ch > ' ') {
+      *psz++ = ch;
+      ch = Serial.read();
+    }
+    *psz = 0;
+    while (ch == ' ') ch = Serial.read();
+    while (ch >= '0' && ch <= '9') {
+      file_size = file_size*10 + ch - '0';
+      ch = Serial.read();
+    }
+
+
+    while(Serial.read() != -1) ;
+
+    switch (cmd_char) {
+        case 'f': // New file
+          {
+            FS *pfs = storage.getFS(storage_index);
+            if (pfs) {
+              if (file_size == 0) file_size = DEFAULT_FILESIZE;
+
+              File file = pfs->open(pathname,FILE_WRITE_BEGIN);
+              if (file) {
+                uint8_t buffer[256];
+                for (int i=0; i < 256; i++) buffer[i] = i;  // random junk
+                file.truncate();  // zero it out in case it was there. 
+                uint32_t bytes_left_to_write = file_size;
+                while (bytes_left_to_write) {
+                  uint32_t write_size = min (file_size, sizeof(buffer));
+                  file.write(buffer, write_size);
+                  bytes_left_to_write -= write_size;
+                }
+                file.close();
+                mtpd.notifyFileCreated(pfs, pathname);
+                Serial.printf("MTPD notified of file:%s size:%u on %s created\n", pathname, file_size, storage.getFSName(storage_index));
+                break;
+
+              }
+          }
+        }
+        break;
+      case 'd': // create a new directory
+        break;
+      case 'r': // remove/delete
+        {
+          FS *pfs = storage.getFS(storage_index);
+          if (pfs) {
+            Serial.printf("MTPD Try to removefile:%s from %s\n", pathname, storage.getFSName(storage_index));
+            if (pfs->remove(pathname)) {
+              Serial.println(" -- Succeeded try to notify");
+              mtpd.notifyFileRemoved(pfs, pathname);
+              Serial.printf("MTPD notified of file:%s on %s removed\n", pathname, storage.getFSName(storage_index));
+            } else {
+              Serial.println(" -- failed to remove");
+            }
+          }
+        }
+        break;
+      case 'i': // Show index list
+        Serial.println("Dump index list");
+        storage.dumpIndexList();
+        break;  
+      default:
+        // show list of commands and list of storages.
+        Serial.println("\n*** List of Storages ***");
+        for (storage_index = 0; storage_index < storage.getFSCount(); storage_index++) {
+          Serial.printf("    %u: %s\n", storage_index, storage.getFSName(storage_index));
+        }
+        Serial.println("\nCommands");
+        Serial.println("  Create File: f <storage index> pathname [size]");
+        Serial.println("  Create directory: d <SI> pathname");
+        Serial.println("  Remove file.dir: r <SI> pathname");
+        Serial.println("  print storage index list: i");
+        break;    
+
+    }
+
+  }
 }

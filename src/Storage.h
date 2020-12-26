@@ -41,6 +41,31 @@
   #define MAX_FILENAME_LEN 256
 #endif
 
+class MTPFile : public File {
+  public:
+    MTPFile (File &f) : _file(f) {}
+
+  virtual size_t read(void *buf, size_t nbyte) {return _file.read(buf, nbyte);}
+  virtual size_t write(const void *buf, size_t size) {return _file.write(buf, size);}
+  virtual int available() { return _file.available();}
+  virtual int peek() {return _file.peek();}
+  virtual void flush() {_file.flush();}
+  virtual bool truncate(uint64_t size=0) {return _file.truncate();}
+  virtual bool seek(uint64_t pos, int mode) {return _file.seek(pos, mode);}
+  virtual uint64_t position() { return position();}
+  virtual uint64_t size() {return _file.size();}
+  virtual void close() {
+    _file.close();
+  }
+  virtual operator bool() { return true; }
+  virtual const char* name() {return _file.name();}
+  virtual bool isDirectory() {return _file.isDirectory();}
+  virtual File openNextFile(uint8_t mode=0) { return _file.openNextFile();} // BUGBUG:: may want to wrap as well...
+  virtual void rewindDirectory(void) {_file.rewindDirectory();}
+  private:
+    File &_file;
+};
+
 class mSD_Base
 {
   public:
@@ -56,6 +81,7 @@ class mSD_Base
     }
 
     uint32_t sd_getFSCount(void) {return fsCount;}
+    FS  *sd_getFS(uint32_t store) {return (store<(uint32_t)fsCount)? sdx[store] : nullptr;}
     const char *sd_getFSName(uint32_t store) { return sd_name[store];}
 
     File sd_open(uint32_t store, const char *filename, uint32_t mode) { return sdx[store]->open(filename,mode);  }
@@ -112,6 +138,8 @@ public:
   virtual uint32_t copy(uint32_t handle, uint32_t newStorage, uint32_t newParent) = 0 ;
 
   virtual bool CopyFiles(uint32_t storage, uint32_t handle, uint32_t newHandle) = 0;
+  virtual uint32_t MapFileNameToIndex(FS *pfs, const char *pathname, bool folder=false, bool addLastNode=false, bool *node_added=nullptr) = 0;
+  virtual uint32_t MapFileNameToIndex(uint32_t storage, const char *pathname, bool folder=false, bool addLastNode=false, bool *node_added=nullptr) = 0;
 };
 
   struct Record 
@@ -134,6 +162,12 @@ class MTPStorage_SD : public MTPStorageInterface, mSD_Base
 { 
 public:
   void addFilesystem(FS &fs, const char *name) { sd_addFilesystem(fs, name);}
+  void dumpIndexList(void);
+
+  // Retrieve Storage Information
+  uint32_t getFSCount() {return sd_getFSCount();}
+  FS  * getFS(uint32_t store) {return sd_getFS(store);}
+  const char *getFSName(uint32_t store) {return sd_getFSName(store);}
 
 private:
   File index_;
@@ -170,8 +204,9 @@ private:
   Record ReadIndexRecord(uint32_t i) ;
   uint16_t ConstructFilename(int i, char* out, int len) ;
   void OpenFileByIndex(uint32_t i, uint32_t mode = FILE_READ) ;
-  void dumpIndexList(void);
+//  void dumpIndexList(void);
   void printRecord(int h, Record *p);
+  void printRecordIncludeName(int h, Record *p);
 
   uint32_t get_FSCount(void) {return sd_getFSCount();}
   const char *get_FSName(uint32_t storage) { return sd_getFSName(storage);}
@@ -194,6 +229,8 @@ private:
 
   bool CopyFiles(uint32_t storage, uint32_t handle, uint32_t newHandle) override ;
   void ResetIndex() override ;
+  uint32_t MapFileNameToIndex(FS *pfs, const char *pathname, bool folder=false, bool addLastNode=false, bool *node_added=nullptr)  override;
+  uint32_t MapFileNameToIndex(uint32_t storage, const char *pathname, bool folder=false, bool addLastNode=false, bool *node_added=nullptr) override; 
 };
 
 #endif
