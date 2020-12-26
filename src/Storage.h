@@ -130,6 +130,7 @@ public:
   virtual size_t write(const char* data, uint32_t size);
   virtual void close() = 0;
   virtual bool DeleteObject(uint32_t object) = 0;
+  virtual bool MarkObjectDeleted(uint32_t object) = 0;
   virtual void CloseIndex() = 0;
 
   virtual void ResetIndex() = 0;
@@ -217,6 +218,7 @@ private:
   uint32_t GetSize(uint32_t handle) override;
   void read(uint32_t handle, uint32_t pos, char* out, uint32_t bytes) override ;
   bool DeleteObject(uint32_t object) override ;
+  bool MarkObjectDeleted(uint32_t object) override;
 
   uint32_t Create(uint32_t storage, uint32_t parent,  bool folder, const char* filename) override ;
 

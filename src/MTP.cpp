@@ -1760,7 +1760,7 @@ bool MTPD::usb_events_init_ = 0;
       send_removeObjectEvent(handle);
 
       storage_->GetObjectInfo(handle, filename, &size, &parent, &store);
-
+      storage_->MarkObjectDeleted(handle);
       uint32_t storage = Store2Storage(store);
       printf("  parent: %x storage: %x -> %x\n", parent, store, storage);
       printf("notify StorageInfoChanged : %x\n", storage);
@@ -1771,9 +1771,6 @@ bool MTPD::usb_events_init_ = 0;
   }
 
   #endif
-
-
-
 
 #endif
 #endif

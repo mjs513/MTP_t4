@@ -441,6 +441,43 @@ void mtp_lock_storage(bool lock) {}
     return true;
   }
 
+  bool MTPStorage_SD::MarkObjectDeleted(uint32_t object)
+  {
+    if(object==0xFFFFFFFFUL) return false; // don't do anything if trying to delete a root directory see below
+
+    Record r = ReadIndexRecord(object);
+    Record t = ReadIndexRecord(r.parent);
+    Record x;
+    Record xo;
+    uint32_t is=-1;
+    if(!r.isdir || (!r.child && r.scanned)) // if file or empty directory
+    { //
+      { if(t.child==object)
+        { // we are the jungest, simply relink parent to older sibling
+          t.child = r.sibling;
+          WriteIndexRecord(r.parent, t);
+        }
+        else
+        { // link junger to older sibling
+          // find junger sibling
+          is=t.child; // jungest sibling
+          x = ReadIndexRecord(is); 
+          while((is>r.store) && (x.sibling != object)) { is=x.sibling; x=ReadIndexRecord(is);}
+          // is points now to junder sibling
+          xo=x;
+          x.sibling = r.sibling;
+          WriteIndexRecord(is, x);
+        }
+        r.name[0]=0;
+        WriteIndexRecord(object, r);
+        return true;
+      }
+    }
+    // BUGBUG:: Not handling directories here yet...
+    return false;
+  }
+
+
   uint32_t MTPStorage_SD::Create(uint32_t store, uint32_t parent,  bool folder, const char* filename)
   {
     uint32_t ret;
