@@ -571,7 +571,8 @@ bool MTPD::usb_events_init_ = 0;
           writestring("");
           break;
         case MTP_PROPERTY_PARENT_OBJECT:      //0xDC0B:
-          write32(parent);
+          // handle root level objects - doc says return 0
+          write32((parent!=store)? parent : 0);
           break;
         case MTP_PROPERTY_PERSISTENT_UID:     //0xDC41:
           write32(p1);
