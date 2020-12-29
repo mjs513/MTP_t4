@@ -41,31 +41,6 @@
   #define MAX_FILENAME_LEN 256
 #endif
 
-class MTPFile : public File {
-  public:
-    MTPFile (File &f) : _file(f) {}
-
-  virtual size_t read(void *buf, size_t nbyte) {return _file.read(buf, nbyte);}
-  virtual size_t write(const void *buf, size_t size) {return _file.write(buf, size);}
-  virtual int available() { return _file.available();}
-  virtual int peek() {return _file.peek();}
-  virtual void flush() {_file.flush();}
-  virtual bool truncate(uint64_t size=0) {return _file.truncate();}
-  virtual bool seek(uint64_t pos, int mode) {return _file.seek(pos, mode);}
-  virtual uint64_t position() { return position();}
-  virtual uint64_t size() {return _file.size();}
-  virtual void close() {
-    _file.close();
-  }
-  virtual operator bool() { return true; }
-  virtual const char* name() {return _file.name();}
-  virtual bool isDirectory() {return _file.isDirectory();}
-  virtual File openNextFile(uint8_t mode=0) { return _file.openNextFile();} // BUGBUG:: may want to wrap as well...
-  virtual void rewindDirectory(void) {_file.rewindDirectory();}
-  private:
-    File &_file;
-};
-
 class mSD_Base
 {
   public:
@@ -124,6 +99,7 @@ public:
 
   virtual void GetObjectInfo(uint32_t handle, char* name, uint32_t* size, uint32_t* parent, uint16_t *store) = 0;
   virtual uint32_t GetSize(uint32_t handle) = 0;
+  virtual bool SetSize(uint32_t handle, uint32_t file_size) = 0;
 
   virtual uint32_t Create(uint32_t storage, uint32_t parent, bool folder, const char* filename) = 0;
   virtual void read(uint32_t handle, uint32_t pos, char* buffer, uint32_t bytes) = 0;
@@ -193,6 +169,7 @@ private:
   void ScanDir(uint32_t storage, uint32_t i) ;
   void ScanAll(uint32_t storage) ;
 
+  void removeFile(uint32_t store, char *filename);
   uint32_t index_entries_ = 0;
   bool index_generated = false;
 
@@ -205,7 +182,6 @@ private:
   Record ReadIndexRecord(uint32_t i) ;
   uint16_t ConstructFilename(int i, char* out, int len) ;
   void OpenFileByIndex(uint32_t i, uint32_t mode = FILE_READ) ;
-//  void dumpIndexList(void);
   void printRecord(int h, Record *p);
   void printRecordIncludeName(int h, Record *p);
 
@@ -216,6 +192,7 @@ private:
   uint32_t GetNextObjectHandle(uint32_t  storage) override ;
   void GetObjectInfo(uint32_t handle, char* name, uint32_t* size, uint32_t* parent, uint16_t *store) override ;
   uint32_t GetSize(uint32_t handle) override;
+  bool SetSize(uint32_t handle, uint32_t file_size) override;
   void read(uint32_t handle, uint32_t pos, char* out, uint32_t bytes) override ;
   bool DeleteObject(uint32_t object) override ;
   bool MarkObjectDeleted(uint32_t object) override;

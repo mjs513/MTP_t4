@@ -2,15 +2,24 @@
 
 #include "SD.h"
 #include "MTP.h"
-
+ #if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__)
+  #include "usb1_mtp.h"
+#endif
 
 #define USE_SD  1         // SDFAT based SDIO and SPI
+#if defined(ARDUINO_TEENSY41)
 #define USE_LFS_RAM 1     // T4.1 PSRAM (or RAM)
-//#define USE_LFS_SLOW_RAM 1 // like RAM but made to be SLOOOWWW
 #define USE_LFS_QSPI 1    // T4.1 QSPI
 #define USE_LFS_PROGM 1   // T4.4 Progam Flash
+#define USE_LFS_NAND 0
+
+#else
+#define USE_LFS_RAM 0     // T4.1 PSRAM (or RAM)
+#define USE_LFS_QSPI 0    // T4.1 QSPI
+#define USE_LFS_PROGM 0   // T4.4 Progam Flash
+#define USE_LFS_NAND 0
+#endif
 #define USE_LFS_SPI 1     // SPI Flash
-#define USE_LFS_NAND 1
 
 
 #if USE_LFS_RAM==1 ||  USE_LFS_PROGM==1 || USE_LFS_QSPI==1 || USE_LFS_SPI==1
@@ -27,7 +36,7 @@
   #ifndef BUILTIN_SCCARD 
     #define BUILTIN_SDCARD 254
   #endif
-  void usb_mtp_configure(void) {}
+  //void usb_mtp_configure(void) {}
 #endif
 
 
@@ -128,7 +137,7 @@ SDClass sdx[nsd];
 
 #else
   const char *lfs_spi_str[]={"nspif-3","nspif-4"}; // edit to reflect your configuration
-  const int lfs_cs[] = {3,4,5,6}; // edit to reflect your configuration
+  const int lfs_cs[] = {5,6}; // edit to reflect your configuration
   const int nfs_spi = sizeof(lfs_spi_str)/sizeof(const char *);
 
 LittleFS_SPIFlash spifs[nfs_spi];
@@ -288,6 +297,11 @@ void storage_configure()
     *ms10 = second() & 1 ? 100 : 0;
   }
 elapsedMillis emLoop = 0;
+  #ifdef ARDUINO_TEENSY41
+  extern "C" {
+    extern uint8_t external_psram_size;
+  }
+  #endif
 
 void setup()
 { 
@@ -304,7 +318,9 @@ void setup()
   Serial.println("MTP_test");
   Serial.flush();
   delay(500);
+#if USE_EVENTS==1
   mtpd.usb_init_events();
+#endif
 #if !__has_include("usb_mtp.h")
   usb_mtp_configure();
 #endif
@@ -360,8 +376,18 @@ void setup()
 
   #endif
 
+  #ifdef ARDUINO_TEENSY41
+  Serial.printf("External RAM size: %u\n", external_psram_size);
+  #endif
+
   Serial.println("\nSetup done");
   emLoop = 0;
+}
+
+int ReadAndEchoSerialChar() {
+  int ch = Serial.read();
+  if (ch >= ' ') Serial.write(ch);
+  return ch;
 }
 
 uint32_t last_storage_index = (uint32_t)-1;
@@ -382,16 +408,16 @@ void loop()
     uint32_t file_size = 0;
 
     // Should probably use Serial.parse ...
-    int cmd_char = Serial.read();
-
-    int ch = Serial.read();
-    while (ch == ' ') ch = Serial.read();
+    Serial.printf("\n *** Command line: ");
+    int cmd_char = ReadAndEchoSerialChar();
+    int ch = ReadAndEchoSerialChar();
+    while (ch == ' ') ch = ReadAndEchoSerialChar();
     if (ch >= '0' && ch <= '9') {
       while (ch >= '0' && ch <= '9') {
         storage_index = storage_index*10 + ch - '0';
-        ch = Serial.read();
+        ch = ReadAndEchoSerialChar();
       }
-      while (ch == ' ') ch = Serial.read();
+      while (ch == ' ') ch = ReadAndEchoSerialChar();
       last_storage_index = storage_index;
     } else {
       storage_index = last_storage_index;
@@ -399,17 +425,18 @@ void loop()
     char *psz = pathname;
     while (ch > ' ') {
       *psz++ = ch;
-      ch = Serial.read();
+      ch = ReadAndEchoSerialChar();
     }
     *psz = 0;
-    while (ch == ' ') ch = Serial.read();
+    while (ch == ' ') ch = ReadAndEchoSerialChar();
     while (ch >= '0' && ch <= '9') {
       file_size = file_size*10 + ch - '0';
-      ch = Serial.read();
+      ch = ReadAndEchoSerialChar();
     }
 
 
-    while(Serial.read() != -1) ;
+    while(ReadAndEchoSerialChar() != -1) ;
+    Serial.println();
 
     switch (cmd_char) {
         case 'f': // New file
@@ -429,16 +456,33 @@ void loop()
                   file.write(buffer, write_size);
                   bytes_left_to_write -= write_size;
                 }
-                file.close();
-                mtpd.notifyFileCreated(pfs, pathname);
-                Serial.printf("MTPD notified of file:%s size:%u on %s created\n", pathname, file_size, storage.getFSName(storage_index));
-                break;
+                uint64_t fs_size = file.size();
 
+                file.close();
+                mtpd.notifyFileCreated(pfs, pathname, false, fs_size);
+                Serial.printf("MTPD notified of file:%s size:%llu on %s created\n", pathname, fs_size, storage.getFSName(storage_index));
+                break;
+              } else {
+                Serial.printf("Failed to create new file: %s on %s created\n", pathname, storage.getFSName(storage_index));
               }
           }
         }
         break;
       case 'd': // create a new directory
+        {
+          FS *pfs = storage.getFS(storage_index);
+            if (pfs) {
+              if (file_size == 0) file_size = DEFAULT_FILESIZE;
+
+              if (pfs->mkdir(pathname)) {
+                mtpd.notifyFileCreated(pfs, pathname, true);  // notify we created a directory
+                Serial.printf("MTPD notified of new directory: %s on %s created\n", pathname, storage.getFSName(storage_index));
+                break;
+              } else {
+                Serial.printf("Failed to create new directory: %s on %s created\n", pathname, storage.getFSName(storage_index));
+              }
+          }
+        }
         break;
       case 'r': // remove/delete
         {

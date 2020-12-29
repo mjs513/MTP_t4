@@ -295,12 +295,10 @@ bool MTPD::usb_events_init_ = 0;
     dtostrf( (float)(TEENSYDUINO / 100.0f), 3, 2, buf);
     strlcat(buf, " / MTP " MTP_VERS, sizeof(buf) );
     writestring( buf );    
-    
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-    // the wString[i] gives compiler warning. 
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Warray-bounds"
     for (size_t i=0; i<10; i++) buf[i] = usb_string_serial_number.wString[i];
-#pragma GCC diagnostic pop
+    #pragma GCC diagnostic pop
     writestring(buf);    
   }
 
@@ -571,8 +569,7 @@ bool MTPD::usb_events_init_ = 0;
           writestring("");
           break;
         case MTP_PROPERTY_PARENT_OBJECT:      //0xDC0B:
-          // handle root level objects - doc says return 0
-          write32((parent!=store)? parent : 0);
+          write32((store==parent)? 0: parent);
           break;
         case MTP_PROPERTY_PERSISTENT_UID:     //0xDC41:
           write32(p1);
@@ -1604,7 +1601,41 @@ bool MTPD::usb_events_init_ = 0;
       }
     }
   
-  #if USE_EVENTS==1
+#endif
+#if USE_EVENTS==1
+
+ #if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__)
+  #include "usb_mtp.h"
+  extern "C"
+  {
+    usb_packet_t *tx_event_packet=NULL;
+
+#if 0
+    int usb_init_events(void)
+    {
+      tx_event_packet = usb_malloc();
+      if(tx_event_packet) return 1; else return 0; 
+    }
+#endif
+  }
+    int usb_mtp_sendEvent(const void *buffer, uint32_t len, uint32_t timeout)
+    {
+      if (!usb_configuration) return -1;
+      memcpy(tx_event_packet->buf, buffer, len);
+      tx_event_packet->len = len;
+      usb_tx(MTP_EVENT_ENDPOINT, tx_event_packet);
+      return len;
+    }
+  int  MTPD::usb_init_events(void) 
+  {
+    usb_events_init_ = true;
+    tx_event_packet = usb_malloc();
+    if(tx_event_packet) return 1; else return 0; 
+
+  }
+
+  #elif defined(__IMXRT1062__)
+  // keep this here until cores is upgraded 
 
   #include "usb_mtp.h"
   extern "C"
@@ -1682,6 +1713,7 @@ bool MTPD::usb_events_init_ = 0;
     }
   }
 
+  #endif
   const uint32_t EVENT_TIMEOUT=60;
 
   int MTPD::send_Event(uint16_t eventCode)
@@ -1720,6 +1752,18 @@ bool MTPD::usb_events_init_ = 0;
     event.params[2]=0;
     return usb_mtp_sendEvent((const void *) &event, event.len, EVENT_TIMEOUT);
   }
+  int MTPD::send_Event(uint16_t eventCode, uint32_t p1, uint32_t p2, uint32_t p3)
+  {
+    MTPContainer event;
+    event.len = 24;
+    event.op =eventCode ;
+    event.type = MTP_CONTAINER_TYPE_EVENT; 
+    event.transaction_id=TID;
+    event.params[0]=p1;
+    event.params[1]=p2;
+    event.params[2]=p3;
+    return usb_mtp_sendEvent((const void *) &event, event.len, EVENT_TIMEOUT);
+  }
 
   int MTPD::send_addObjectEvent(uint32_t p1) {return send_Event(MTP_EVENT_OBJECT_ADDED, p1); }
   int MTPD::send_removeObjectEvent(uint32_t p1) {return send_Event(MTP_EVENT_OBJECT_REMOVED, p1); }
@@ -1736,6 +1780,7 @@ bool MTPD::usb_events_init_ = 0;
     uint32_t handle = storage_->MapFileNameToIndex(pfs, pathname, is_directory, true, &node_added);
     printf("notifyFileCreated: %x:%x maps to handle: %x\n", (uint32_t)pfs, pathname, handle);
     if (handle != 0xFFFFFFFFUL) {
+      storage_->SetSize(handle, file_size);
       send_addObjectEvent(handle);
       storage_->GetObjectInfo(handle, filename, &size, &parent, &store);
 
@@ -1773,5 +1818,4 @@ bool MTPD::usb_events_init_ = 0;
 
   #endif
 
-#endif
 #endif

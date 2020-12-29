@@ -92,14 +92,14 @@ void mtp_lock_storage(bool lock) {}
   { if(sd_isOpen(index_)) return; // only once
     mtp_lock_storage(true);
     index_=sd_open(0,indexFile, FILE_WRITE_BEGIN);
+    if(!index_) Serial.println("cannot open Index file"); 
     mtp_lock_storage(false);
   }
 
   void MTPStorage_SD::ResetIndex() {
     if(!sd_isOpen(index_)) return;
-    
     CloseIndex();
-    OpenIndex();
+//    OpenIndex();
 
     all_scanned_ = false;
     open_file_ = 0xFFFFFFFEUL;
@@ -141,7 +141,7 @@ void mtp_lock_storage(bool lock) {}
   {
     Record tmp = ReadIndexRecord(i);
       
-    if (tmp.parent==(unsigned)i) 
+    if (tmp.parent==0xFFFFFFFFUL) //flags the root object
     { strcpy(out, "/");
       return tmp.store;
     }
@@ -268,7 +268,7 @@ void mtp_lock_storage(bool lock) {}
     for(int ii=0; ii<num_storage; ii++)
     {
       r.store = ii; // 
-      r.parent = ii;
+      r.parent = 0xFFFFFFFFUL; // 
       r.sibling = 0;
       r.child = 0;
       r.isdir = true;
@@ -337,7 +337,7 @@ void mtp_lock_storage(bool lock) {}
     }
   }
 
-  uint32_t MTPStorage_SD::GetNextObjectHandle(uint32_t  storee)
+  uint32_t MTPStorage_SD::GetNextObjectHandle(uint32_t  store)
   {
     while (true) 
     { if (next_ == 0) return 0;
@@ -369,6 +369,17 @@ void mtp_lock_storage(bool lock) {}
     return ReadIndexRecord(handle).child;
   }
 
+  bool MTPStorage_SD::SetSize(uint32_t handle, uint32_t file_size)
+  {
+    Record r = ReadIndexRecord(handle);  
+    // Should probably check for valid data...
+    if (r.isdir ) return false;
+    r.child = file_size;
+    WriteIndexRecord(handle, r);
+    return true;
+  }
+
+
   void MTPStorage_SD::read(uint32_t handle, uint32_t pos, char* out, uint32_t bytes)
   {
     OpenFileByIndex(handle);
@@ -378,66 +389,55 @@ void mtp_lock_storage(bool lock) {}
     mtp_lock_storage(false);
   }
 
+void MTPStorage_SD::removeFile(uint32_t store, char *file)
+{ 
+  char tname[MAX_FILENAME_LEN];
+  
+  File f1=sd_open(store,file,0);
+  File f2;
+  while(f2=f1.openNextFile())
+  { sprintf(tname,"%s/%s",file,f2.name());
+    if(f2.isDirectory()) removeFile(store,tname); else sd_remove(store,tname);
+  }
+  sd_rmdir(store,file);
+}
+
   bool MTPStorage_SD::DeleteObject(uint32_t object)
   {
-    char filename[MAX_FILENAME_LEN];
-
     if(object==0xFFFFFFFFUL) return true; // don't do anything if trying to delete a root directory see below
 
     // first create full filename
-      ConstructFilename(object, filename, MAX_FILENAME_LEN);
+    char filename[MAX_FILENAME_LEN];
+    ConstructFilename(object, filename, MAX_FILENAME_LEN);
 
     Record r = ReadIndexRecord(object);
+
+    // remove file from storage (assume it is always working)
+    mtp_lock_storage(true);
+    removeFile(r.store,filename);
+    mtp_lock_storage(false);
+
+    // mark object as deleted
+    r.name[0]=0;
+    WriteIndexRecord(object, r);
+    
+    // update index file
     Record t = ReadIndexRecord(r.parent);
-    Record ro = r;
-    Record to = t;
-    Record x;
-    Record xo;
-    uint32_t is=-1;
-    if(!r.isdir || (!r.child && r.scanned)) // if file or empty directory
-    { //
-      { if(t.child==object)
-        { // we are the jungest, simply relink parent to older sibling
-          t.child = r.sibling;
-          WriteIndexRecord(r.parent, t);
-        }
-        else
-        { // link junger to older sibling
-          // find junger sibling
-          is=t.child; // jungest sibling
-          x = ReadIndexRecord(is); 
-          while((is>r.store) && (x.sibling != object)) { is=x.sibling; x=ReadIndexRecord(is);}
-          // is points now to junder sibling
-          xo=x;
-          x.sibling = r.sibling;
-          WriteIndexRecord(is, x);
-        }
-        // delete now file
-        mtp_lock_storage(true);
-        bool success = r.isdir ? sd_rmdir(r.store,filename): sd_remove(r.store,filename);
-        mtp_lock_storage(false);
-        if(success)
-        { // mark object as deleted
-          r.name[0]=0;
-          WriteIndexRecord(object, r);
-        }
-        else
-        { // undo index manipulation
-           WriteIndexRecord(object, ro);
-           WriteIndexRecord(ro.parent, to);
-           if(is>0)WriteIndexRecord(is, xo);
-        }
-        return success;
-      }
+    if(t.child==object)
+    { // we are the jungest, simply relink parent to older sibling
+      t.child = r.sibling;
+      WriteIndexRecord(r.parent, t);
     }
-    if(!r.scanned) ScanDir(r.store, object) ; // have no info on directory, so scan it
-    uint32_t ix = r.child;
-    while(ix)
-    { Record x= ReadIndexRecord(ix);
-      DeleteObject(ix);
-      ix=x.sibling;
+    else
+    { // link junger to older sibling
+      // find junger sibling
+      uint32_t is = t.child;
+      Record x = ReadIndexRecord(is);
+      while((x.sibling != object)) { is=x.sibling; x=ReadIndexRecord(is);}
+      // is points now to junder sibling
+      x.sibling = r.sibling;
+      WriteIndexRecord(is, x);
     }
-    DeleteObject(object);
     return true;
   }
 
