@@ -1,17 +1,14 @@
 #include "Arduino.h"
 
 #include "SD.h"
-#include "MTP.h"
- #if defined(__MK20DX128__) || defined(__MK20DX256__) || defined(__MK64FX512__) || defined(__MK66FX1M0__)
-  #include "usb1_mtp.h"
-#endif
+#include <MTP.h>
 
 #define USE_SD  1         // SDFAT based SDIO and SPI
 #if defined(ARDUINO_TEENSY41)
 #define USE_LFS_RAM 1     // T4.1 PSRAM (or RAM)
 #define USE_LFS_QSPI 1    // T4.1 QSPI
 #define USE_LFS_PROGM 1   // T4.4 Progam Flash
-#define USE_LFS_NAND 0
+#define USE_LFS_NAND 1
 
 #else
 #define USE_LFS_RAM 0     // T4.1 PSRAM (or RAM)
@@ -25,18 +22,6 @@
 #if USE_LFS_RAM==1 ||  USE_LFS_PROGM==1 || USE_LFS_QSPI==1 || USE_LFS_SPI==1
   #include <LittleFS.h>
   #include <LittleFS_NAND.h> 
-#endif
-
-#if defined(__IMXRT1062__)
-  // following only as long usb_mtp is not included in cores
-  #if !__has_include("usb_mtp.h")
-    #include "usb1_mtp.h"
-  #endif
-#else
-  #ifndef BUILTIN_SCCARD 
-    #define BUILTIN_SDCARD 254
-  #endif
-  //void usb_mtp_configure(void) {}
 #endif
 
 
@@ -305,8 +290,6 @@ elapsedMillis emLoop = 0;
 
 void setup()
 { 
-  pinMode(2, OUTPUT);
-  pinMode(1, OUTPUT);
   #if defined(USB_MTPDISK_SERIAL) 
     while(!Serial && millis() < 5000); // comment if you do not want to wait for terminal
   #else

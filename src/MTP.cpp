@@ -1618,20 +1618,57 @@ bool MTPD::usb_events_init_ = 0;
     }
 #endif
   }
+  #define EVENT_TX_PACKET_LIMIT 4
+
     int usb_mtp_sendEvent(const void *buffer, uint32_t len, uint32_t timeout)
     {
+      usb_packet_t *event_packet;
+      printf("usb_mtp_sendEvent: called %x %x\n", (uint32_t)buffer, len);
+        struct MTPContainer {
+        uint32_t len;  // 0
+        uint16_t type; // 4
+        uint16_t op;   // 6
+        uint32_t transaction_id; // 8
+        uint32_t params[5];    // 12
+      } __attribute__((__may_alias__)) ;
+
+      const  MTPContainer *pe = (const  MTPContainer *)buffer;
+      printf("  op:%x len:%d type:%d tid:%d Params:  ", pe->op, pe->len, pe->type, pe->transaction_id);
+      if(pe->len>12) printf(" %x", pe->params[0]); \
+      if(pe->len>16) printf(" %x", pe->params[1]); \
+      if(pe->len>20) printf(" %x", pe->params[2]); \
+      printf("\n"); \
+
       if (!usb_configuration) return -1;
-      memcpy(tx_event_packet->buf, buffer, len);
-      tx_event_packet->len = len;
-      usb_tx(MTP_EVENT_ENDPOINT, tx_event_packet);
+      elapsedMillis em = 0;
+      while (1) {
+        if (!usb_configuration) {
+          return -1;
+        }
+        if (usb_tx_packet_count(MTP_EVENT_ENDPOINT) < EVENT_TX_PACKET_LIMIT) {
+          event_packet = usb_malloc();
+          if (event_packet) break;
+        }
+        if (em > timeout) {
+          return -1;
+        }
+        yield();
+      }
+
+
+      memcpy(event_packet->buf, buffer, len);
+      event_packet->len = len;
+      usb_tx(MTP_EVENT_ENDPOINT, event_packet);
       return len;
     }
   int  MTPD::usb_init_events(void) 
   {
+    /*
     usb_events_init_ = true;
     tx_event_packet = usb_malloc();
     if(tx_event_packet) return 1; else return 0; 
-
+    */
+    return true;
   }
 
   #elif defined(__IMXRT1062__)
