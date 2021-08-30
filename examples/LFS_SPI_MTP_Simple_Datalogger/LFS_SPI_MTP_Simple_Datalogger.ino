@@ -10,22 +10,11 @@
 #include <MTP.h>
 #include <LFS_MTP_Callback.h>
 
-#if defined(__IMXRT1062__)
-#if defined(ARDUINO_TEENSY40) && defined(BUILTIN_SDCARD) // needed untin not corrected in SD.h
-#undef BUILTIN_SDCARD
-#endif
-#else
-#ifndef BUILTIN_SDCARD
-#define BUILTIN_SDCARD 254
-#endif
-void usb_mtp_configure(void) {}
-#endif
-
 
 // LittleFS supports creating file systems (FS) in multiple memory types.  Depending on the
 // memory type you want to use you would uncomment one of the following constructors
 
-LittleFS_Program myfs;  // Used to create FS on QSPI NAND flash chips located on the bottom of the T4.1 such as the W25N01G. for the full list of supported NAND flash see  https://github.com/PaulStoffregen/LittleFS#nand-flash
+LittleFS_SPIFlash myfs;  // Used to create FS on QSPI NAND flash chips located on the bottom of the T4.1 such as the W25N01G. for the full list of supported NAND flash see  https://github.com/PaulStoffregen/LittleFS#nand-flash
 
 LittleFSMTPCB lfsmtpcb;
 
@@ -35,7 +24,7 @@ int record_count = 0;
 bool write_data = false;
 uint32_t diskSize;
 
-static const uint32_t file_system_size = 1024 * 512;
+const int chipSelect = 7;
 
 // Add in MTPD objects
 MTPStorage_SD storage;
@@ -53,26 +42,8 @@ void setup()
 
   Serial.print("Initializing LittleFS ...");
 
-  // see if the Flash is present and can be initialized:
-  // lets check to see if the T4 is setup for security first
-  #if ARDUINO_TEENSY40
-    if ((IOMUXC_GPR_GPR11 & 0x100) == 0x100) {
-      //if security is active max disk size is 960x1024
-      Serial.println("SECURITY ENABLED");
-      if(file_system_size > 960*1024){
-        diskSize = 960*1024;
-        Serial.printf("PROGRAM disk defaulted to %u bytes\n", diskSize);  
-      } else {
-        diskSize = file_system_size;
-        Serial.printf("PROGRAM disk using %u bytes\n", diskSize);
-      }
-    }
-  #else
-    diskSize = file_system_size;
-  #endif
-
   // checks that the LittFS program has started with the disk size specified
-  if (!myfs.begin(file_system_size)) {
+  if (!myfs.begin(7, SPI1)) {
     Serial.printf("Error starting %s\n", "PROGRAM FLASH DISK");
     while (1) {
       // Error, so don't do anything more - stay stuck here
@@ -81,7 +52,7 @@ void setup()
 
   mtpd.begin();
   lfsmtpcb.set_formatLevel(true);  //sets formating to lowLevelFormat
-  storage.addFilesystem(myfs, "Program", &lfsmtpcb, (uint32_t)(LittleFS*)&myfs);
+  storage.addFilesystem(myfs, "sflash1", &lfsmtpcb, (uint32_t)(LittleFS*)&myfs);
 
   Serial.println("LittleFS initialized.");
 
@@ -108,7 +79,6 @@ void loop()
         }
         break;
       case 'x': stopLogging(); break;
-
       case 'd': dumpLog(); break;
       case '\r':
       case '\n':
