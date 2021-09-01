@@ -15,7 +15,10 @@ public:
       uint8_t cdPin=0xff, uint8_t opt=SHARED_SPI, 
       uint32_t maxSpeed=SD_SCK_MHZ(50), SpiPort_t* port=&SPI) 
       : mtpd_(mtpd), storage_(storage), sdc_name_(sdc_name), csPin_(csPin), 
-      cdPin_(cdPin), opt_(opt), maxSpeed_(maxSpeed), port_(port) {};
+      cdPin_(cdPin), opt_(opt), maxSpeed_(maxSpeed), port_(port) {
+        // Make sure we have a date time callback set...
+        FsDateTime::callback = dateTime;
+  };
 
   //---------------------------------------------------------------------------
   // Callback function overrides.
@@ -24,6 +27,11 @@ public:
   // Support functions for SD Insertions.
   bool init(bool add_if_missing);
   void loop();
+
+  // date time callback from SD library
+  static void dateTime(uint16_t* date, uint16_t* time, uint8_t* ms10);
+
+
 
 private:
   // helper functions

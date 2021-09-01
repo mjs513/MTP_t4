@@ -27,6 +27,16 @@ uint8_t SDMTPClass::formatStore(MTPStorage_SD *mtpstorage, uint32_t store, uint3
   return success ? MTPStorageInterfaceCB::FORMAT_SUCCESSFUL : MTPStorageInterfaceCB::FORMAT_NOT_SUPPORTED;
 }
 
+#include "TimeLib.h"
+void SDMTPClass::dateTime(uint16_t* date, uint16_t* time, uint8_t* ms10)
+{
+  *date = FS_DATE(year(), month(), day());
+  *time = FS_TIME(hour(), minute(), second());
+  *ms10 = second() & 1 ? 100 : 0;
+  Serial.printf("### dateTime: called %x %x %x\n", *date, *time, *ms10);
+}
+
+
 //===================================================
 // SD Testing for disk insertion.
 #if defined(ARDUINO_TEENSY41)

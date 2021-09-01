@@ -65,9 +65,7 @@ void setup()
     }
   }
 
-  Serial.println("*** before myfs2.init ***");
   //myfs2.init(true);
-  Serial.println("*** after ***");
 
   Serial.println("SD initialized.");
 
@@ -89,9 +87,7 @@ void loop()
       write_data = true;   // sets flag to continue to write data until new command is received
       // opens a file or creates a file if not present,  FILE_WRITE will append data to
       // to the file created.
-      Serial.println("Before file open"); Serial.flush();
       dataFile = myfs.open("datalog.txt", FILE_WRITE);
-      Serial.println("After file open"); Serial.flush();
       logData();
     }
     break;
@@ -129,9 +125,7 @@ void logData()
 
   // if the file is available, write to it:
   if (dataFile) {
-    Serial.println("Before datafile.println"); Serial.flush();
     dataFile.println(dataString);
-    Serial.println("After datafile.println"); Serial.flush();
     // print to the serial port too:
     Serial.println(dataString);
     record_count += 1;
