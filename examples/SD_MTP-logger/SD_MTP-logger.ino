@@ -9,6 +9,8 @@
 #include "SD.h"
 #include <MTP.h>
 #include <SDMTPClass.h>
+#include "TimeLib.h"
+
 
 #define USE_BUILTIN_SDCARD
 #if defined(USE_BUILTIN_SDCARD) && defined(BUILTIN_SDCARD)
@@ -50,10 +52,11 @@ void setup()
   }
   Serial.println("\n" __FILE__ " " __DATE__ " " __TIME__);
 
-  Serial.print("Initializing SD ...");
+  Serial.println("Initializing SD ...");
 
-  // See if we can initialize SD FS
   mtpd.begin();
+  Serial.printf("Date: %u/%u/%u %u:%u:%u\n", day(), month(), year(),
+                hour(), minute(), second());
 
   if (!myfs.init(true)) { // init the object and add it to the list
     Serial.printf("SDIO Storage failed or missing on SD Pin: %u\n", CS_SD);

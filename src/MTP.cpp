@@ -26,6 +26,7 @@
 #if defined(USB_MTPDISK) || defined(USB_MTPDISK_SERIAL)
 
 #include "MTP.h"
+#include <TimeLib.h>
 #undef USB_DESC_LIST_DEFINE
 #include "usb_desc.h"
 
@@ -360,7 +361,13 @@ const uint16_t supported_events[] =
     uint32_t params[5];    // 12
   };
 */
-  int MTPD::begin() { return usb_init_events(); }
+  int MTPD::begin() { 
+    setSyncProvider(getTeensyTime);
+    return usb_init_events(); 
+  }
+
+  time_t MTPD::getTeensyTime() {return Teensy3Clock.get();}
+
   void MTPD::write8 (uint8_t  x) { write((char*)&x, sizeof(x)); }
   void MTPD::write16(uint16_t x) { write((char*)&x, sizeof(x)); }
   void MTPD::write32(uint32_t x) { write((char*)&x, sizeof(x)); }
