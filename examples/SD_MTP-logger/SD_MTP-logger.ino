@@ -1,5 +1,5 @@
 /*
-  LittleFS  datalogger
+  SF  datalogger
 
   This example shows how to log data from three analog sensors
   to an storage device such as a FLASH.
@@ -8,7 +8,7 @@
 */
 #include "SD.h"
 #include <MTP.h>
-#include <SD_MTP_Callback.h>
+#include <SDMTPClass.h>
 
 #define USE_BUILTIN_SDCARD
 #if defined(USE_BUILTIN_SDCARD) && defined(BUILTIN_SDCARD)
@@ -16,12 +16,13 @@
 #else
 #define CS_SD 10
 #endif
+#define SPI_SPEED SD_SCK_MHZ(16)  // adjust to sd card 
 
 
 // LittleFS supports creating file systems (FS) in multiple memory types.  Depending on the
 // memory type you want to use you would uncomment one of the following constructors
 
-SDClass myfs;  // Used to create FS on QSPI NAND flash chips located on the bottom of the T4.1 such as the W25N01G. for the full list of supported NAND flash see  https://github.com/PaulStoffregen/LittleFS#nand-flash
+//SDClass myfs;  // Used to create FS on SD Card either built-in or external
 
 File dataFile;  // Specifes that dataFile is of File type
 
@@ -29,13 +30,12 @@ int record_count = 0;
 bool write_data = false;
 uint32_t diskSize;
 
-static const uint32_t file_system_size = 1024 * 512;
-
 // Add in MTPD objects
 MTPStorage_SD storage;
 MTPD       mtpd(&storage);
 
-SD_MTP_CB sd_mtp_cb(mtpd, storage);
+SDMTPClass myfs(mtpd, storage, "SDIO", CS_SD);
+//SDMTPClass myfs(mtpd, storage, "SD10", 10, 0xff, SHARED_SPI, SPI_SPEED);
 
 void setup()
 {
@@ -53,20 +53,9 @@ void setup()
   Serial.print("Initializing SD ...");
 
   // See if we can initialize SD FS
-#if CS_SD == BUILTIN_SDCARD
-  if (!myfs.sdfs.begin(SdioConfig(FIFO_SDIO))) {
-    Serial.println("SDIO Storage failed or missing");
-    // BUGBUG Add the detect insertion?
-    if (!sd_mtp_cb.installSDIOInsertionDetection(&myfs, "SD", 0)) {
-      pinMode(13, OUTPUT);
-      while (1) {
-        digitalToggleFast(13);
-        delay(250);
-      }
-    }
-  }
-#else
-  if (!myfs.sdfs.begin(SdSpiConfig(CS_SD, SHARED_SPI, SPI_SPEED))) {
+  mtpd.begin();
+
+  if (!myfs.init(true)) { // init the object and add it to the list
     Serial.printf("SDIO Storage failed or missing on SD Pin: %u\n", CS_SD);
     // BUGBUG Add the detect insertion?
     pinMode(13, OUTPUT);
@@ -76,13 +65,9 @@ void setup()
     }
   }
 
-#endif
-  mtpd.begin();
-  storage.addFilesystem(myfs, "SD", &sd_mtp_cb, (uint32_t)(void*)&myfs);
-  uint64_t totalSize = myfs.totalSize();
-  uint64_t usedSize  = myfs.usedSize();
-  Serial.print("Total Size: ");Serial.print(totalSize); 
-  Serial.print(" Used Size: "); Serial.println(usedSize);
+  Serial.println("*** before myfs2.init ***");
+  //myfs2.init(true);
+  Serial.println("*** after ***");
 
   Serial.println("SD initialized.");
 
@@ -104,7 +89,9 @@ void loop()
       write_data = true;   // sets flag to continue to write data until new command is received
       // opens a file or creates a file if not present,  FILE_WRITE will append data to
       // to the file created.
+      Serial.println("Before file open"); Serial.flush();
       dataFile = myfs.open("datalog.txt", FILE_WRITE);
+      Serial.println("After file open"); Serial.flush();
       logData();
     }
     break;
@@ -118,9 +105,10 @@ void loop()
     while (Serial.read() != -1) ; // remove rest of characters.
   }
   else mtpd.loop();
-  
+
   // Call code to detect if SD status changed
-  sd_mtp_cb.checkSDStatus();
+  myfs.loop();
+  //myfs2.loop();
 
   if (write_data) logData();
 }
@@ -141,7 +129,9 @@ void logData()
 
   // if the file is available, write to it:
   if (dataFile) {
+    Serial.println("Before datafile.println"); Serial.flush();
     dataFile.println(dataString);
+    Serial.println("After datafile.println"); Serial.flush();
     // print to the serial port too:
     Serial.println(dataString);
     record_count += 1;
