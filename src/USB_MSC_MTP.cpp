@@ -6,18 +6,11 @@ USBHub hub2(myusb);
 
 
 // start off with one of these...
-#include <MSC_MTP_Callback.h>
-MSC_MTP_CB mscmtpcb;
+//#include <MSC_MTP_Callback.h>
+//MSC_MTP_CB mscmtpcb;
 
 // start off with one controller. 
 msController msDrive[USE_MSC_FAT](myusb);
-bool msDrive_previous[USE_MSC_FAT]; // Was this drive there the previous time through?
-MSCClass msc[USE_MSC_FAT_VOL];
-char  nmsc_str[USE_MSC_FAT_VOL][20];
-
-uint16_t msc_storage_index[USE_MSC_FAT_VOL];
-uint8_t msc_drive_index[USE_MSC_FAT_VOL]; // probably can find easy way not to need this.
-
 
 void USB_MSC_MTP::begin() {
 	myusb.begin();
@@ -82,7 +75,7 @@ bool USB_MSC_MTP::mbrDmp(msController *pdrv) {
   return true;
 }
 
-void USB_MSC_MTP::checkUSB(bool fInit) {
+void USB_MSC_MTP::checkUSBStatus(bool fInit) {
 	
   bool usb_drive_changed_state = false;
   myusb.Task(); // make sure we are up to date.
@@ -123,7 +116,8 @@ void USB_MSC_MTP::checkUSB(bool fInit) {
                 } 
                 else snprintf(nmsc_str[index_msc], sizeof(nmsc_str[index_msc]), "MSC%d-%d", index_usb_drive, index_drive_partition);
                 msc_drive_index[index_msc] = index_usb_drive;
-                msc_storage_index[index_msc] = storage_.addFilesystem(msc[index_msc], nmsc_str[index_msc], &mscmtpcb, (uint32_t)(void*)&msc[index_msc]);
+                msc_storage_index[index_msc] = storage_.addFilesystem(msc[index_msc], nmsc_str[index_msc], this, (uint32_t)(void*)&msc[index_msc]);
+				//addFSToStorage(true, index_msc); // do the work to add us to the storage list.
 #if 0
 
                 elapsedMicros emmicro = 0;
@@ -133,6 +127,7 @@ void USB_MSC_MTP::checkUSB(bool fInit) {
                 Serial.printf("new Storage %d %s %llu(%u) %llu(%u)\n", index_msc, nmsc_str[index_msc], totalSize, elapsed_totalSize, usedSize, (uint32_t)emmicro - elapsed_totalSize); 
 #endif                
                 if (!fInit) mtpd_.send_StoreAddedEvent(msc_storage_index[index_msc]);
+				
               }
               break;
             }
@@ -162,24 +157,37 @@ void USB_MSC_MTP::checkUSB(bool fInit) {
   }
 }
 
-
-
-void USB_MSC_MTP::dump_hexbytes(const void *ptr, int len)
+PFsLib pfsLIB1;
+uint8_t USB_MSC_MTP::formatStore(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token, uint32_t p2, bool post_process)
 {
-  if (ptr == NULL || len <= 0) return;
-  const uint8_t *p = (const uint8_t *)ptr;
-  while (len) {
-    for (uint8_t i = 0; i < 32; i++) {
-      if (i > len) break;
-      Serial.printf("%02X ", p[i]);
-    }
-    Serial.print(":");
-    for (uint8_t i = 0; i < 32; i++) {
-      if (i > len) break;
-      Serial.printf("%c", ((p[i] >= ' ') && (p[i] <= '~')) ? p[i] : '.');
-    }
-    Serial.println();
-    p += 32;
-    len -= 32;
+  // Lets map the user_token back to oint to our object...
+  Serial.printf("Format Callback: user_token:%x store: %u p2:%u post:%u \n", user_token, store, p2, post_process);
+  
+  MSCClass *pmsc = (MSCClass*)user_token;
+
+  if (pmsc->mscfs.fatType() == FAT_TYPE_FAT12) {
+    Serial.printf("    Fat12 not supported\n");  
+    return MTPStorageInterfaceCB::FORMAT_NOT_SUPPORTED;
   }
+
+  // For all of these the fat ones will do on post_process
+  if (!post_process) return MTPStorageInterfaceCB::FORMAT_NEEDS_CALLBACK;
+
+  bool success = pfsLIB1.formatter(pmsc->mscfs); 
+
+  return success ? MTPStorageInterfaceCB::FORMAT_SUCCESSFUL : MTPStorageInterfaceCB::FORMAT_NOT_SUPPORTED;
+}
+
+uint64_t USB_MSC_MTP::usedSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token)
+{
+
+  Serial.printf("\n\n}}}}}}}}} MSCMTPCB::usedSizeCB called %x %u %u\n", (uint32_t)mtpstorage, store, user_token);
+  
+  MSCClass *pmsc = (MSCClass*)user_token;
+
+  if (pmsc->mscfs.fatType() == FAT_TYPE_FAT32) {
+	  Serial.printf("MSCMTPCB::usedSizeCB called for Fat32\n");  
+  }
+  
+  return pmsc->usedSize();
 }

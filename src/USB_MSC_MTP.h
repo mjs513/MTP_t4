@@ -10,18 +10,29 @@
 #define USE_MSC_FAT_VOL 8 // Max MSC FAT Volumes. 
 
 
-class USB_MSC_MTP : public MTPStorageInterfaceCB
+class USB_MSC_MTP : public MSCClass, public MTPStorageInterfaceCB
 {
 public:
   USB_MSC_MTP(MTPD &mtpd, MTPStorage_SD &storage) : mtpd_(mtpd), storage_(storage) {};
    void begin();
    bool mbrDmp(msController *pdrv);
-   void checkUSB(bool fInit);
+   void checkUSBStatus(bool fInit);
    void dump_hexbytes(const void *ptr, int len);
+   uint8_t formatStore(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token, uint32_t p2, bool post_process);
+   uint64_t usedSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token);
 
 private:
   MTPD &mtpd_;
   MTPStorage_SD &storage_;
+
+	bool msDrive_previous[USE_MSC_FAT]; // Was this drive there the previous time through?
+	MSCClass msc[USE_MSC_FAT_VOL];
+	char  nmsc_str[USE_MSC_FAT_VOL][20];
+
+	uint16_t msc_storage_index[USE_MSC_FAT_VOL];
+	uint8_t msc_drive_index[USE_MSC_FAT_VOL]; // probably can find easy way not to need this.
+
+
 
   #define DEFAULT_FILESIZE 1024
   
