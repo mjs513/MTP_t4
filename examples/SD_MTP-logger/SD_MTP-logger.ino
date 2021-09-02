@@ -41,7 +41,7 @@ MTPD       mtpd(&storage);
 #define COUNT_MYFS  2  // could do by count, but can limit how many are created...
 SDMTPClass myfs[] = {
                       {mtpd, storage, "SDIO", CS_SD}, 
-                      {mtpd, storage, "SPI10", 8, 9, SHARED_SPI, SPI_SPEED}
+                      {mtpd, storage, "SPI8", 8, 9, SHARED_SPI, SPI_SPEED}
                     };
 //SDMTPClass myfs(mtpd, storage, "SD10", 10, 0xff, SHARED_SPI, SPI_SPEED);
 
