@@ -27,6 +27,19 @@ uint8_t SDMTPClass::formatStore(MTPStorage_SD *mtpstorage, uint32_t store, uint3
   return success ? MTPStorageInterfaceCB::FORMAT_SUCCESSFUL : MTPStorageInterfaceCB::FORMAT_NOT_SUPPORTED;
 }
 
+uint64_t SDMTPClass::usedSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token)
+{
+  // Courious how often called and how long it takes...
+  Serial.printf("\n\n}}}}}}}}} SDMTPClass::usedSizeCB called %x %u %u cs:%u ft:%u\n", (uint32_t)mtpstorage, store, user_token, csPin_,
+    sdfs.vol()->fatType());
+  elapsedMillis em = 0;
+  uint64_t us = usedSize();
+  Serial.println(em, DEC);
+  return us;
+}
+
+
+
 #include "TimeLib.h"
 void SDMTPClass::dateTime(uint16_t* date, uint16_t* time, uint8_t* ms10)
 {
@@ -133,8 +146,8 @@ void SDMTPClass::addFSToStorage(bool send_events)
   } else {
     // not in our list, try adding it
     Serial.println("addFSToStorage: Added FS"); 
-    store = storage_.addFilesystem(*this, sdc_name_, this, (uint32_t)(void*)this);
-    if(send_events) mtpd_.send_StoreAddedEvent(store);
+    store_ = storage_.addFilesystem(*this, sdc_name_, this, (uint32_t)(void*)this);
+    if(send_events) mtpd_.send_StoreAddedEvent(store_);
   }
 
 

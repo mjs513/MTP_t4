@@ -20,9 +20,16 @@ public:
         FsDateTime::callback = dateTime;
   };
 
+  // simple parameter retrieve methods
+  const char *name(void) {return sdc_name_;}
+  uint8_t csPin(void) {return csPin_;}
+  uint8_t cdPin(void) {return cdPin_;}
+  uint32_t store(void) {return store_;}
+
   //---------------------------------------------------------------------------
   // Callback function overrides.
   uint8_t formatStore(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token, uint32_t p2, bool post_process);
+  uint64_t usedSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token);
 
   // Support functions for SD Insertions.
   bool init(bool add_if_missing);
@@ -46,6 +53,7 @@ private:
   uint8_t opt_;
   uint32_t maxSpeed_;
   SpiPort_t *port_;
+  uint32_t store_;
 
   // Currently SDIO only, may add. SPI ones later
   bool check_disk_insertion_ = false;

@@ -32,11 +32,14 @@ int record_count = 0;
 bool write_data = false;
 uint32_t diskSize;
 
+uint8_t active_storage = 0;
+
 // Add in MTPD objects
 MTPStorage_SD storage;
 MTPD       mtpd(&storage);
 
-SDMTPClass myfs(mtpd, storage, "SDIO", CS_SD);
+#define COUNT_MYFS  2  // could do by count, but can limit how many are created...
+SDMTPClass myfs[] = {{mtpd, storage, "SDIO", CS_SD}, {mtpd, storage, "SPI10", 10, 0xff, SHARED_SPI, SPI_SPEED}};
 //SDMTPClass myfs(mtpd, storage, "SD10", 10, 0xff, SHARED_SPI, SPI_SPEED);
 
 void setup()
@@ -58,9 +61,13 @@ void setup()
   Serial.printf("Date: %u/%u/%u %u:%u:%u\n", day(), month(), year(),
                 hour(), minute(), second());
 
-  if (!myfs.init(true)) { // init the object and add it to the list
-    Serial.printf("SDIO Storage failed or missing on SD Pin: %u\n", CS_SD);
-    // BUGBUG Add the detect insertion?
+  // Try to add all of them. 
+  bool storage_added = false;
+  for (uint8_t i = 0 ; i < COUNT_MYFS; i++) {
+    storage_added |= myfs[i].init(true);
+  }
+  if (!storage_added) {
+    Serial.println("Failed to add any valid storage objects");
     pinMode(13, OUTPUT);
     while (1) {
       digitalToggleFast(13);
@@ -79,7 +86,7 @@ void setup()
 void loop()
 {
   if ( Serial.available() ) {
-    char rr;
+    uint8_t rr;
     rr = Serial.read();
     switch (rr) {
     case 'l': listFiles(); break;
@@ -90,7 +97,7 @@ void loop()
       write_data = true;   // sets flag to continue to write data until new command is received
       // opens a file or creates a file if not present,  FILE_WRITE will append data to
       // to the file created.
-      dataFile = myfs.open("datalog.txt", FILE_WRITE);
+      dataFile = myfs[active_storage].open("datalog.txt", FILE_WRITE);
       logData();
     }
     break;
@@ -100,14 +107,23 @@ void loop()
     case '\r':
     case '\n':
     case 'h': menu(); break;
+    #if COUNT_MYFS > 1
+    case '0' ... '9':
+      rr -= '0';
+      if (rr < COUNT_MYFS) {
+        active_storage = rr;
+        Serial.println("Active Storage Index Changes"); 
+      }
+      break;
+
+    #endif    
     }
     while (Serial.read() != -1) ; // remove rest of characters.
   }
   else mtpd.loop();
 
   // Call code to detect if SD status changed
-  myfs.loop();
-  //myfs2.loop();
+  for (uint8_t i = 0 ; i < COUNT_MYFS; i++) myfs[i].loop();
 
   if (write_data) logData();
 }
@@ -154,7 +170,7 @@ void dumpLog()
 {
   Serial.println("\nDumping Log!!!");
   // open the file.
-  dataFile = myfs.open("datalog.txt");
+  dataFile = myfs[active_storage].open("datalog.txt");
 
   // if the file is available, write to it:
   if (dataFile) {
@@ -173,6 +189,9 @@ void menu()
 {
   Serial.println();
   Serial.println("Menu Options:");
+  #if COUNT_MYFS > 1
+  Serial.println("\t[0-9] - Set Active Storage");
+  #endif
   Serial.println("\tl - List files on disk");
   Serial.println("\te - Erase files on disk");
   Serial.println("\ts - Start Logging data (Restarting logger will append records to existing log)");
@@ -185,11 +204,11 @@ void menu()
 void listFiles()
 {
   Serial.print("\n Space Used = ");
-  Serial.println(myfs.usedSize());
+  Serial.println(myfs[active_storage].usedSize());
   Serial.print("Filesystem Size = ");
-  Serial.println(myfs.totalSize());
+  Serial.println(myfs[active_storage].totalSize());
 
-  printDirectory(myfs);
+  printDirectory(myfs[active_storage]);
 }
 
 extern PFsLib pfsLIB;
@@ -197,7 +216,7 @@ void eraseFiles()
 {
 
   PFsVolume partVol;
-  if (!partVol.begin(myfs.sdfs.card(), true, 1)) {
+  if (!partVol.begin(myfs[active_storage].sdfs.card(), true, 1)) {
     Serial.println("Failed to initialize partition");
     return;
   }
