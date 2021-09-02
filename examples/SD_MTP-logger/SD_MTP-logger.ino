@@ -39,7 +39,10 @@ MTPStorage_SD storage;
 MTPD       mtpd(&storage);
 
 #define COUNT_MYFS  2  // could do by count, but can limit how many are created...
-SDMTPClass myfs[] = {{mtpd, storage, "SDIO", CS_SD}, {mtpd, storage, "SPI10", 10, 0xff, SHARED_SPI, SPI_SPEED}};
+SDMTPClass myfs[] = {
+                      {mtpd, storage, "SDIO", CS_SD}, 
+                      {mtpd, storage, "SPI10", 8, 9, SHARED_SPI, SPI_SPEED}
+                    };
 //SDMTPClass myfs(mtpd, storage, "SD10", 10, 0xff, SHARED_SPI, SPI_SPEED);
 
 void setup()
@@ -86,44 +89,55 @@ void setup()
 void loop()
 {
   if ( Serial.available() ) {
-    uint8_t rr;
-    rr = Serial.read();
-    switch (rr) {
-    case 'l': listFiles(); break;
-    case 'e': eraseFiles(); break;
-    case 's':
-    {
-      Serial.println("\nLogging Data!!!");
-      write_data = true;   // sets flag to continue to write data until new command is received
-      // opens a file or creates a file if not present,  FILE_WRITE will append data to
-      // to the file created.
-      dataFile = myfs[active_storage].open("datalog.txt", FILE_WRITE);
-      logData();
-    }
-    break;
-    case 'x': stopLogging(); break;
+    uint8_t command = Serial.read();
+    int ch = Serial.read();
+    uint8_t temp = CommandLineReadNextNumber(ch, 0);
+    while (ch == ' ') ch = Serial.read();
 
-    case 'd': dumpLog(); break;
-    case '\r':
-    case '\n':
-    case 'h': menu(); break;
-    #if COUNT_MYFS > 1
-    case '0' ... '9':
-      rr -= '0';
-      if (rr < COUNT_MYFS) {
-        active_storage = rr;
-        Serial.println("Active Storage Index Changes"); 
+    switch (command) {
+      case '1':
+        {
+          // first dump list of storages:
+          uint32_t fsCount = storage.getFSCount();
+          Serial.printf("\nDump Storage list(%u)\n", fsCount);
+          for (uint32_t ii = 0; ii < fsCount; ii++) {
+            Serial.printf("store:%u storage:%x name:%s fs:%x\n", ii, mtpd.Store2Storage(ii), storage.getStoreName(ii), (uint32_t)storage.getStoreFS(ii));
+          }
+          Serial.println("\nDump Index List");
+          storage.dumpIndexList();
+        }
+        break;  
+      case '2':
+        Serial.printf("Drive # %d Selected\n", active_storage);
+        active_storage = temp;
+        break;
+      case 'l': listFiles(); break;
+      case 'e': eraseFiles(); break;
+      case 's':
+      {
+        Serial.println("\nLogging Data!!!");
+        write_data = true;   // sets flag to continue to write data until new command is received
+        // opens a file or creates a file if not present,  FILE_WRITE will append data to
+        // to the file created.
+        dataFile = myfs[active_storage].open("datalog.txt", FILE_WRITE);
+        logData();
       }
       break;
-
-    #endif    
+      case 'x': stopLogging(); break;
+  
+      case 'd': dumpLog(); break;
+      case '\r':
+      case '\n':
+      case 'h': menu(); break;
     }
     while (Serial.read() != -1) ; // remove rest of characters.
   }
-  else mtpd.loop();
-
-  // Call code to detect if SD status changed
-  for (uint8_t i = 0 ; i < COUNT_MYFS; i++) myfs[i].loop();
+  else 
+  { 
+    mtpd.loop();
+    // Call code to detect if SD status changed
+    for(uint8_t i = 0; i < COUNT_MYFS; i++) myfs[i].loop();
+  }
 
   if (write_data) logData();
 }
@@ -189,9 +203,8 @@ void menu()
 {
   Serial.println();
   Serial.println("Menu Options:");
-  #if COUNT_MYFS > 1
-  Serial.println("\t[0-9] - Set Active Storage");
-  #endif
+  Serial.println("\t1 - List Drives (Step 1)");
+  Serial.println("\t2 - Select Drive for Logging (Step 2)");
   Serial.println("\tl - List files on disk");
   Serial.println("\te - Erase files on disk");
   Serial.println("\ts - Start Logging data (Restarting logger will append records to existing log)");
@@ -258,4 +271,17 @@ void printSpaces(int num) {
   for (int i = 0; i < num; i++) {
     Serial.print(" ");
   }
+}
+
+
+uint32_t CommandLineReadNextNumber(int &ch, uint32_t default_num) {
+  while (ch == ' ') ch = Serial.read();
+  if ((ch < '0') || (ch > '9')) return default_num;
+
+  uint32_t return_value = 0;
+  while ((ch >= '0') && (ch <= '9')) {
+    return_value = return_value * 10 + ch - '0';
+    ch = Serial.read(); 
+  }
+  return return_value;  
 }
