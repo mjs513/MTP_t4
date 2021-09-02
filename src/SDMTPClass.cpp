@@ -1,7 +1,12 @@
 #include <SDMTPClass.h>
 #include <mscFS.h>
 
-
+#if defined(MAINTAIN_FREE_CLUSTER_COUNT) && (MAINTAIN_FREE_CLUSTER_COUNT == 0)
+#warning "###############################################################"
+#warning "# MAINTAIN_FREE_CLUSTER_COUNT is 0 in SdFatConfig.h           #"
+#warning "# Large Fat32 SD cards will likely fail to work properly      #"
+#warning "###############################################################"
+#endif
 
 //=============================================================================
 // try to get the right FS for this store and then call it's format if we have one...
