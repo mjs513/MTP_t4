@@ -58,6 +58,9 @@ bool USB_MSC_MTP::mbrDmp(msController *pdrv) {
       case 7:
         Serial.print("exFAT:\t");
         break;
+	  case 15:
+	    Serial.print("Ext\t");
+		break;
       default:
         Serial.print("pt_#");
         Serial.print(pt->type);
