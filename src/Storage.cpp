@@ -263,12 +263,12 @@ void mtp_lock_storage(bool lock) {}
         r.scanned = false;
         sd_getName(child_,r.name, MAX_FILENAME_LEN);
 #ifdef MTP_SUPPORT_MODIFY_DATE
-        bool success = child_.getModifyDateTime(&r.modifyDate, &r.modifyTime);
-        Serial.printf("~~~ScanDir Mod: %s %u %x %x\n", r.name, success, r.modifyDate, r.modifyTime);
+        /*bool success = */child_.getModifyDateTime(&r.modifyDate, &r.modifyTime);
+        //Serial.printf("~~~ScanDir Mod: %s %u %x %x\n", r.name, success, r.modifyDate, r.modifyTime);
 #endif
 #ifdef MTP_SUPPORT_CREATE_DATE
-        success = child_.getCreateDateTime(&r.createDate, &r.createTime);
-        Serial.printf("~~~ScanDir Cre: %s %u %x %x\n", r.name, success, r.createDate, r.createTime);
+        /*success = */child_.getCreateDateTime(&r.createDate, &r.createTime);
+        //Serial.printf("~~~ScanDir Cre: %s %u %x %x\n", r.name, success, r.createDate, r.createTime);
 #endif
         sibling = AppendIndexRecord(r);
         child_.close();
@@ -964,4 +964,19 @@ uint32_t MTPStorage_SD::MapFileNameToIndex(uint32_t storage, const char *pathnam
   }
   // 
   return 0xFFFFFFFFUL;
+}
+
+// Simple method to call any callback functions who want to know 
+// when the loop function is called to do some minor background work
+void MTPStorage_SD::loop() {
+  int fs_count = sd_getFSCount();
+  for (int store=0; store < fs_count; store++) {
+    FS* pfs = sd_getStoreFS(store);
+    MTPStorageInterfaceCB *callback = sd_getCallback(store);
+
+    if (pfs && callback) {
+      // Have them return something to maybe remove calls
+      callback->loop(this, store, sd_getUserToken(store));
+    }
+  }
 }

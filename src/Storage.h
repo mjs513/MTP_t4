@@ -53,6 +53,7 @@ class  MTPStorageInterfaceCB {
     virtual uint8_t formatStore(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token, uint32_t p2, bool post_process) {return FORMAT_NOT_SUPPORTED;}  
     virtual uint64_t totalSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token);
     virtual uint64_t usedSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token) ;
+    virtual bool loop(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token) {return false;}
 };
 
 class mSD_Base
@@ -142,6 +143,7 @@ public:
   virtual bool removeFilesystem(uint32_t storage)=0;
   virtual uint32_t get_FSCount(void) = 0;
   virtual const char *get_FSName(uint32_t storage) = 0;
+  virtual void loop() = 0;
 
   virtual uint64_t totalSize(uint32_t storage) = 0;
   virtual uint64_t usedSize(uint32_t storage) = 0;
@@ -271,6 +273,7 @@ private:
 
   uint32_t get_FSCount(void) {return sd_getFSCount();}
   const char *get_FSName(uint32_t storage) { return sd_getFSName(storage);}
+  void loop();
 
   void StartGetObjectHandles(uint32_t storage, uint32_t parent) override ;
   uint32_t GetNextObjectHandle(uint32_t  storage) override ;

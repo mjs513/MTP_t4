@@ -1239,6 +1239,8 @@ const uint16_t supported_events[] =
       printf("Event: "); printContainer();
       usb_free(receive_buffer);
     }
+    // See if Storage needs to do anything
+    storage_->loop();
   }
 
 #elif defined(__IMXRT1062__)  
@@ -2047,6 +2049,8 @@ const uint16_t supported_events[] =
         }
       }
 
+      // See if Storage needs to do anything
+      storage_->loop();
     }
 
 

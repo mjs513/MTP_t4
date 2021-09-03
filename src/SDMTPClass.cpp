@@ -35,13 +35,34 @@ uint8_t SDMTPClass::formatStore(MTPStorage_SD *mtpstorage, uint32_t store, uint3
 uint64_t SDMTPClass::usedSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token)
 {
   // Courious how often called and how long it takes...
-  Serial.printf("\n\n}}}}}}}}} SDMTPClass::usedSizeCB called %x %u %u cs:%u ft:%u\n", (uint32_t)mtpstorage, store, user_token, csPin_,
-    sdfs.vol()->fatType());
+  Serial.printf("\n\n}}}}}}}}} SDMTPClass::usedSizeCB called %x %u %u cs:%u ", (uint32_t)mtpstorage, store, user_token, csPin_);
+  if (!disk_valid_) {
+    Serial.println("* not inserted *");
+    return 0l;
+  }
+  Serial.printf("ft:%u\n", sdfs.vol()->fatType());
+
   elapsedMillis em = 0;
   uint64_t us = usedSize();
   Serial.println(em, DEC);
   return us;
 }
+
+uint64_t SDMTPClass::totalSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token)
+{
+  // Courious how often called and how long it takes...
+  Serial.printf("\n\n{{{{{{{{{ SDMTPClass::totalSizeCB called %x %u %u cs:%u ", (uint32_t)mtpstorage, store, user_token, csPin_);
+  if (!disk_valid_) {
+    Serial.println("* not inserted *");
+    return 0l;
+  }
+  Serial.printf("ft:%u\n", sdfs.vol()->fatType());
+  elapsedMillis em = 0;
+  uint64_t us = totalSize();
+  Serial.println(em, DEC);
+  return us;
+}
+
 
 
 
@@ -71,13 +92,13 @@ void SDMTPClass::dateTime(uint16_t* date, uint16_t* time, uint8_t* ms10)
 bool  SDMTPClass::init(bool add_if_missing) {
 #ifdef BUILTIN_SDCARD
   if (csPin_ == BUILTIN_SDCARD) {
-    if (!sdfs.begin(SdioConfig(FIFO_SDIO))) {
+    if (!(disk_valid_ = sdfs.begin(SdioConfig(FIFO_SDIO)))) {
       if (!add_if_missing) return false; // not here and don't add...
 #ifdef _SD_DAT3
       cdPin_ = _SD_DAT3;
       pinMode(_SD_DAT3, INPUT_PULLDOWN);
       check_disk_insertion_ = true;
-      return true;
+      //return true;
 #else
       return false;
 #endif
@@ -87,12 +108,13 @@ bool  SDMTPClass::init(bool add_if_missing) {
 #endif
   {
     Serial.printf("Trying to open SPI config: %u %u %u %u\n", csPin_, cdPin_, opt_, maxSpeed_);
-    if (!sdfs.begin(SdSpiConfig(csPin_, opt_, maxSpeed_, port_))) {
+    if (!(disk_valid_ = sdfs.begin(SdSpiConfig(csPin_, opt_, maxSpeed_, port_)))) {
       Serial.println("    Failed to open");
       if (!add_if_missing || (cdPin_ == 0xff)) return false; // Not found and no add or not detect
-      pinMode(cdPin_, INPUT_PULLDOWN);
+      pinMode(cdPin_, INPUT_PULLUP);  // connects I think to SDCard frame ground
       check_disk_insertion_ = true;
-      return true;
+      disk_inserted_time_ = 0;
+      //return true;
     }
   }
   addFSToStorage(false); // do the work to add us to the storage list.
@@ -100,53 +122,80 @@ bool  SDMTPClass::init(bool add_if_missing) {
 }
 
 
-void SDMTPClass::loop() {
-  if (check_disk_insertion_)
-  {
-    // delayMicroseconds(5);
-    if (digitalRead(cdPin_))
-    {
-      // looks like SD Inserted. so disable the pin for now...
-      // BUGBUG for SPI ones with extra IO pins can do more...
-      pinMode(cdPin_, INPUT_DISABLE);
-      check_disk_insertion_ = false; // only try this once
+bool SDMTPClass::loop(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token) {
+  //Serial.printf("SDMTPClass::loop %u\n", csPin_);
 
-      delay(1);
-      Serial.printf("\n*** SD Card Inserted ***");
-      #ifdef BUILTIN_SDCARD
-      if (csPin_ == BUILTIN_SDCARD) {
-        if (!sdfs.begin(SdioConfig(FIFO_SDIO))) {
-          #ifdef _SD_DAT3
-          //pinMode(_SD_DAT3, INPUT_PULLDOWN);  // it failed try to reinit again
-          #endif
-          return; // bail
-        }
-      }
-      else
+  if (!check_disk_insertion_) return true; // bail quick
+  // delayMicroseconds(5);
+  if (!digitalRead(cdPin_)) return true; // again quick
+
+  delay(1); // give it some time to settle; 
+  if (!digitalRead(cdPin_)) return true; // double check.
+  if (disk_inserted_time_ == 0) disk_inserted_time_ = millis(); // when did we detect it...
+  // looks like SD Inserted. so disable the pin for now...
+  // BUGBUG for SPI ones with extra IO pins can do more...
+
+  delay(25);  // time to stabilize 
+  Serial.printf("\n*** SD Card Inserted ***");
+  #ifdef BUILTIN_SDCARD
+  if (csPin_ == BUILTIN_SDCARD) {
+    Serial.println("Trying to begin SDIO config");
+    if (!(disk_valid_ = sdfs.begin(SdioConfig(FIFO_SDIO)))) {
+      #ifdef _SD_DAT3
+      //pinMode(_SD_DAT3, INPUT_PULLDOWN);  // it failed try to reinit again
       #endif
-      {
-        Serial.printf("Trying to open SPI config: %u %u %u %u\n", csPin_, cdPin_, opt_, maxSpeed_);
-        if (sdfs.begin(SdSpiConfig(csPin_, opt_, maxSpeed_, port_))) {
-          Serial.println("    Failed to open");
-          // pinMode(cdPin_, INPUT_PULLDOWN);  // BUGBUG retury?  But first probably only when other removed?
-          return;
-        }
+      Serial.println("    Begin Failed");
+      if ((millis() - disk_inserted_time_) > DISK_INSERT_TEST_TIME) {
+        pinMode(cdPin_, INPUT_DISABLE);
+        check_disk_insertion_ = false; // only try this once        
+        Serial.println("    Time Out");
       }
-      addFSToStorage(true); // do the work to add us to the storage list.
+      return true; // bail
     }
+
+    pinMode(cdPin_, INPUT_DISABLE);
+    check_disk_insertion_ = false; // only try this once
   }
+  else
+  #endif
+  {
+    Serial.printf("Trying to begin SPI config: %u %u %u %u\n", csPin_, cdPin_, opt_, maxSpeed_);
+    if (!(disk_valid_ = sdfs.begin(SdSpiConfig(csPin_, opt_, maxSpeed_, port_)))) {
+      Serial.println("    Begin Failed");
+      if ((millis() - disk_inserted_time_) > DISK_INSERT_TEST_TIME) {
+        pinMode(cdPin_, INPUT_DISABLE);
+        check_disk_insertion_ = false; // only try this once        
+        Serial.println("    Time Out");
+      }
+      // pinMode(cdPin_, INPUT_PULLDOWN);  // BUGBUG retury?  But first probably only when other removed?
+      return true;
+    }
+    // not sure yet.. may not do this after it works. 
+    pinMode(cdPin_, INPUT_DISABLE);
+    check_disk_insertion_ = false; // only try this once
+  }
+  addFSToStorage(true); // do the work to add us to the storage list.
+  return true;
 }
 
 void SDMTPClass::addFSToStorage(bool send_events)
 {
+  // Lets first get size so won't hold up later
+  uint64_t ts = totalSize();
+  uint64_t us  = usedSize();
+  Serial.print("Total Size: "); Serial.print(ts);
+  Serial.print(" Used Size: "); Serial.println(us);
+
   // The SD is valid now...
   uint32_t store = storage_.getStoreID(sdc_name_);
   if (store != 0xFFFFFFFFUL)
   {
-    if(send_events) mtpd_.send_StoreRemovedEvent(store);
+    //if(send_events) mtpd_.send_StoreRemovedEvent(store);
     delay(50);
     //mtpd_.send_StorageInfoChangedEvent(store);
-    if(send_events) mtpd_.send_StoreAddedEvent(store);
+    //if(send_events) mtpd_.send_StoreAddedEvent(store);
+    Serial.println("SDMTPClass::addFSToStorage - Disk in list, try reset event");
+    if(send_events) mtpd_.send_DeviceResetEvent();
 
   } else {
     // not in our list, try adding it
@@ -156,9 +205,5 @@ void SDMTPClass::addFSToStorage(bool send_events)
   }
 
 
-  uint64_t ts = totalSize();
-  uint64_t us  = usedSize();
-  Serial.print("Total Size: "); Serial.print(ts);
-  Serial.print(" Used Size: "); Serial.println(us);
 
 }

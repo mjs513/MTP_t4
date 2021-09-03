@@ -124,7 +124,10 @@ void loop()
       }
       break;
       case 'x': stopLogging(); break;
-  
+      case'r':
+        Serial.println("Reset");
+        mtpd.send_DeviceResetEvent();
+        break;
       case 'd': dumpLog(); break;
       case '\r':
       case '\n':
@@ -135,8 +138,6 @@ void loop()
   else 
   { 
     mtpd.loop();
-    // Call code to detect if SD status changed
-    for(uint8_t i = 0; i < COUNT_MYFS; i++) myfs[i].loop();
   }
 
   if (write_data) logData();
@@ -210,6 +211,7 @@ void menu()
   Serial.println("\ts - Start Logging data (Restarting logger will append records to existing log)");
   Serial.println("\tx - Stop Logging data");
   Serial.println("\td - Dump Log");
+  Serial.println("\tr - Reset MTP");
   Serial.println("\th - Menu");
   Serial.println();
 }

@@ -29,11 +29,12 @@ public:
   //---------------------------------------------------------------------------
   // Callback function overrides.
   uint8_t formatStore(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token, uint32_t p2, bool post_process);
+  uint64_t totalSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token);
   uint64_t usedSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token);
+  bool loop(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token);
 
   // Support functions for SD Insertions.
   bool init(bool add_if_missing);
-  void loop();
 
   // date time callback from SD library
   static void dateTime(uint16_t* date, uint16_t* time, uint8_t* ms10);
@@ -57,6 +58,9 @@ private:
 
   // Currently SDIO only, may add. SPI ones later
   bool check_disk_insertion_ = false;
+  bool disk_valid_ = false;
+  uint32_t disk_inserted_time_ = 0;
+  enum {DISK_INSERT_TEST_TIME=2000};
 };
 
 #endif
