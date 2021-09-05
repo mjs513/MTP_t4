@@ -98,6 +98,7 @@ bool  SDMTPClass::init(bool add_if_missing) {
       cdPin_ = _SD_DAT3;
       pinMode(_SD_DAT3, INPUT_PULLDOWN);
       check_disk_insertion_ = true;
+      disk_inserted_time_ = 0;
       //return true;
 #else
       return false;
@@ -153,7 +154,7 @@ bool SDMTPClass::loop(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_t
       return true; // bail
     }
 
-    pinMode(cdPin_, INPUT_DISABLE);
+    //pinMode(cdPin_, INPUT_DISABLE);  // shoot self in foot..
     check_disk_insertion_ = false; // only try this once
   }
   else
@@ -181,10 +182,13 @@ bool SDMTPClass::loop(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_t
 void SDMTPClass::addFSToStorage(bool send_events)
 {
   // Lets first get size so won't hold up later
-  uint64_t ts = totalSize();
-  uint64_t us  = usedSize();
-  Serial.print("Total Size: "); Serial.print(ts);
-  Serial.print(" Used Size: "); Serial.println(us);
+  if (disk_valid_) {
+    // only called if the disk is actually there...
+    uint64_t ts = totalSize();
+    uint64_t us  = usedSize();
+    Serial.print("Total Size: "); Serial.print(ts);
+    Serial.print(" Used Size: "); Serial.println(us);
+  }
 
   // The SD is valid now...
   uint32_t store = storage_.getStoreID(sdc_name_);
