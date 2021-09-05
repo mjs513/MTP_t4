@@ -21,11 +21,6 @@
 #define SPI_SPEED SD_SCK_MHZ(16)  // adjust to sd card 
 
 
-// LittleFS supports creating file systems (FS) in multiple memory types.  Depending on the
-// memory type you want to use you would uncomment one of the following constructors
-
-//SDClass myfs;  // Used to create FS on SD Card either built-in or external
-
 File dataFile;  // Specifes that dataFile is of File type
 
 int record_count = 0;
@@ -44,6 +39,14 @@ SDMTPClass myfs[] = {
                       {mtpd, storage, "SPI8", 8, 9, SHARED_SPI, SPI_SPEED}
                     };
 //SDMTPClass myfs(mtpd, storage, "SD10", 10, 0xff, SHARED_SPI, SPI_SPEED);
+
+// Experiment add memory FS to mainly hold the storage index
+// May want to wrap this all up as well
+#include <LittleFS.h>
+#include <LFS_MTP_Callback.h>
+#define LFSRAM_SIZE 65536  // probably more than enough...
+LittleFS_RAM lfsram;
+LittleFSMTPCB lfsmtpcb;
 
 void setup()
 {
@@ -78,7 +81,16 @@ void setup()
     }
   }
 
-  //myfs2.init(true);
+  // lets initialize a RAM drive. 
+  if (lfsram.begin (LFSRAM_SIZE)) {
+    Serial.printf("Ram Drive of size: %u initialized\n", LFSRAM_SIZE);
+    lfsmtpcb.set_formatLevel(true);  //sets formating to lowLevelFormat
+    uint32_t istore = storage.addFilesystem(lfsram, "RAM", &lfsmtpcb, (uint32_t)(LittleFS*)&lfsram);
+    if (istore != 0xFFFFFFFFUL) storage.setIndexStore(istore);
+    Serial.printf("Set Storage Index drive to %u\n", istore);
+  }
+
+
 
   Serial.println("SD initialized.");
 

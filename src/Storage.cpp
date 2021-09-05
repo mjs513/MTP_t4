@@ -115,10 +115,35 @@ void mtp_lock_storage(bool lock) {}
     return sd_usedSize(store);
   }
 
+  void MTPStorage_SD::setIndexFile(File * index_file)
+  {
+    CloseIndex(); // close off any
+    if (index_file) {
+      index_ = *index_file;
+      user_index_file_ = true;
+    } else {
+      user_index_file_ = false;
+    }
+  }
+
+  bool MTPStorage_SD::setIndexStore(uint32_t storage)
+  {
+    if (storage >= sd_getFSCount()) return false; // out of range
+    CloseIndex();
+    index_file_storage_ = storage;
+    user_index_file_ = false;
+    return true;
+  }
+
   void MTPStorage_SD::CloseIndex()
   {
     mtp_lock_storage(true);
-    if(sd_isOpen(index_)) index_.close();
+    if(user_index_file_) {
+      // maybe truncate the file
+      index_.seek(0, SeekSet);
+      index_.truncate(); 
+    } else if (sd_isOpen(index_)) index_.close();
+
     mtp_lock_storage(false);
     index_generated = false;
     index_entries_ = 0;
@@ -127,9 +152,10 @@ void mtp_lock_storage(bool lock) {}
   void MTPStorage_SD::OpenIndex() 
   { if(sd_isOpen(index_)) return; // only once
     mtp_lock_storage(true);
-    index_=sd_open(0,indexFile, FILE_WRITE_BEGIN);
+    index_=sd_open(index_file_storage_,indexFile, FILE_WRITE_BEGIN);
     if(!index_) Serial.println("cannot open Index file"); 
     mtp_lock_storage(false);
+    user_index_file_ = false; // opened up default file so make sure off
   }
 
   void MTPStorage_SD::ResetIndex() {
@@ -211,7 +237,11 @@ void mtp_lock_storage(bool lock) {}
     index_generated = true;
     // first remove old index file
     mtp_lock_storage(true);
-    sd_remove(0,indexFile);
+    if(user_index_file_) {
+      // maybe truncate the file
+      index_.seek(0, SeekSet);
+      index_.truncate(); 
+    } else sd_remove(index_file_storage_,indexFile);
     mtp_lock_storage(false);
 
     num_storage = sd_getFSCount();

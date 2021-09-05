@@ -223,6 +223,9 @@ public:
   FS* getStoreFS(uint32_t store) {return sd_getStoreFS(store);}
   uint32_t openFileIndex(void) {return open_file_;}
 
+  void setIndexFile(File * index_file=nullptr);  // allow application to pass in index_file to be used. 
+  bool setIndexStore(uint32_t storage=0);  // or can specify specif store in list defaults to 0
+
   /** set the file's last access date */
 const uint8_t T_ACCESS = 1;
 /** set the file's creation date and time */
@@ -234,6 +237,8 @@ private:
   File index_;
   File file_;
   File child_;
+  uint32_t index_file_storage_ = 0;
+  bool user_index_file_ = false;
 
   int num_storage = 0;
   const char **sd_str = 0;
