@@ -221,6 +221,9 @@ public:
   uint32_t getFSCount(void) {return sd_getFSCount();}
   const char *getStoreName(uint32_t store) {return sd_getStoreName(store);} 
   FS* getStoreFS(uint32_t store) {return sd_getStoreFS(store);}
+  MTPStorageInterfaceCB *getCallback(uint32_t store) {return sd_getCallback(store);} 
+  uint32_t getUserToken(uint32_t store) {return sd_getUserToken(store);} 
+
   uint32_t openFileIndex(void) {return open_file_;}
 
   void setIndexFile(File * index_file=nullptr);  // allow application to pass in index_file to be used. 

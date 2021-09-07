@@ -112,10 +112,13 @@ bool  SDMTPClass::init(bool add_if_missing) {
     if (!(disk_valid_ = sdfs.begin(SdSpiConfig(csPin_, opt_, maxSpeed_, port_)))) {
       Serial.println("    Failed to open");
       if (!add_if_missing || (cdPin_ == 0xff)) return false; // Not found and no add or not detect
-      pinMode(cdPin_, INPUT_PULLUP);  // connects I think to SDCard frame ground
-      check_disk_insertion_ = true;
       disk_inserted_time_ = 0;
       //return true;
+    }
+    // if cd Pin defined configure it to check in the looop function. 
+    if (cdPin_) {
+      check_disk_insertion_ = true;
+      pinMode(cdPin_, INPUT_PULLUP);  // connects I think to SDCard frame ground
     }
   }
   addFSToStorage(false); // do the work to add us to the storage list.
@@ -128,54 +131,56 @@ bool SDMTPClass::loop(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_t
 
   if (!check_disk_insertion_) return true; // bail quick
   // delayMicroseconds(5);
-  if (!digitalRead(cdPin_)) return true; // again quick
+  if (digitalRead(cdPin_)) {
+    delay(1); // give it some time to settle; 
+    if (!digitalRead(cdPin_)) return true; // double check.
+    if (disk_inserted_time_ == 0) disk_inserted_time_ = millis(); // when did we detect it...
+    // looks like SD Inserted. so disable the pin for now...
+    // BUGBUG for SPI ones with extra IO pins can do more...
 
-  delay(1); // give it some time to settle; 
-  if (!digitalRead(cdPin_)) return true; // double check.
-  if (disk_inserted_time_ == 0) disk_inserted_time_ = millis(); // when did we detect it...
-  // looks like SD Inserted. so disable the pin for now...
-  // BUGBUG for SPI ones with extra IO pins can do more...
-
-  delay(25);  // time to stabilize 
-  Serial.printf("\n*** SD Card Inserted ***");
-  #ifdef BUILTIN_SDCARD
-  if (csPin_ == BUILTIN_SDCARD) {
-    Serial.println("Trying to begin SDIO config");
-    if (!(disk_valid_ = sdfs.begin(SdioConfig(FIFO_SDIO)))) {
-      #ifdef _SD_DAT3
-      //pinMode(_SD_DAT3, INPUT_PULLDOWN);  // it failed try to reinit again
-      #endif
-      Serial.println("    Begin Failed");
-      if ((millis() - disk_inserted_time_) > DISK_INSERT_TEST_TIME) {
-        pinMode(cdPin_, INPUT_DISABLE);
-        check_disk_insertion_ = false; // only try this once        
-        Serial.println("    Time Out");
+    delay(25);  // time to stabilize 
+    Serial.printf("\n*** SD Card Inserted ***");
+    #ifdef BUILTIN_SDCARD
+    if (csPin_ == BUILTIN_SDCARD) {
+      Serial.println("Trying to begin SDIO config");
+      if (!(disk_valid_ = sdfs.begin(SdioConfig(FIFO_SDIO)))) {
+        #ifdef _SD_DAT3
+        //pinMode(_SD_DAT3, INPUT_PULLDOWN);  // it failed try to reinit again
+        #endif
+        Serial.println("    Begin Failed");
+        if ((millis() - disk_inserted_time_) > DISK_INSERT_TEST_TIME) {
+          pinMode(cdPin_, INPUT_DISABLE);
+          check_disk_insertion_ = false; // only try this once        
+          Serial.println("    Time Out");
+        }
+        return true; // bail
       }
-      return true; // bail
-    }
 
-    //pinMode(cdPin_, INPUT_DISABLE);  // shoot self in foot..
-    check_disk_insertion_ = false; // only try this once
-  }
-  else
-  #endif
-  {
-    Serial.printf("Trying to begin SPI config: %u %u %u %u\n", csPin_, cdPin_, opt_, maxSpeed_);
-    if (!(disk_valid_ = sdfs.begin(SdSpiConfig(csPin_, opt_, maxSpeed_, port_)))) {
-      Serial.println("    Begin Failed");
-      if ((millis() - disk_inserted_time_) > DISK_INSERT_TEST_TIME) {
-        pinMode(cdPin_, INPUT_DISABLE);
-        check_disk_insertion_ = false; // only try this once        
-        Serial.println("    Time Out");
-      }
-      // pinMode(cdPin_, INPUT_PULLDOWN);  // BUGBUG retury?  But first probably only when other removed?
-      return true;
+      //pinMode(cdPin_, INPUT_DISABLE);  // shoot self in foot..
+      check_disk_insertion_ = false; // only try this once
     }
-    // not sure yet.. may not do this after it works. 
-    pinMode(cdPin_, INPUT_DISABLE);
-    check_disk_insertion_ = false; // only try this once
+    else
+    #endif
+    {
+      Serial.printf("Trying to begin SPI config: %u %u %u %u\n", csPin_, cdPin_, opt_, maxSpeed_);
+      if (!(disk_valid_ = sdfs.begin(SdSpiConfig(csPin_, opt_, maxSpeed_, port_)))) {
+        Serial.println("    Begin Failed");
+        if ((millis() - disk_inserted_time_) > DISK_INSERT_TEST_TIME) {
+          pinMode(cdPin_, INPUT_DISABLE);
+          check_disk_insertion_ = false; // only try this once        
+          Serial.println("    Time Out");
+        }
+        // pinMode(cdPin_, INPUT_PULLDOWN);  // BUGBUG retury?  But first probably only when other removed?
+        return true;
+      }
+      // not sure yet.. may not do this after it works. 
+      pinMode(cdPin_, INPUT_DISABLE);
+      check_disk_insertion_ = false; // only try this once
+    }
+    addFSToStorage(true); // do the work to add us to the storage list.
+  } else {
+    //
   }
-  addFSToStorage(true); // do the work to add us to the storage list.
   return true;
 }
 
