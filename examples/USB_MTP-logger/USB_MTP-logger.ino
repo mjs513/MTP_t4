@@ -49,10 +49,9 @@ void setup()
   
   mtpd.begin();
   Serial.println("\nInitializing USB MSC drives...");
-  usbmsc.checkUSB(true);
+  usbmsc.checkUSBStatus(true);
   
   Serial.println("MSC and MTP initialized.");
-  FsDateTime::callback = dateTime;
 
   menu();
 
@@ -108,7 +107,7 @@ void loop()
   }
   else {
     mtpd.loop();
-    usbmsc.checkUSB(false);
+    usbmsc.checkUSBStatus(false);
   }
 
   if (write_data) logData();
