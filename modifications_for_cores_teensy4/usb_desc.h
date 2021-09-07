@@ -11,14 +11,14 @@
   #define MANUFACTURER_NAME_LEN 11
   #define PRODUCT_NAME          {'T','e','e','n','s','y',' ','M','T','P',' ','D','i','s','k','/','S','e','r','i','a','l'}
   #define PRODUCT_NAME_LEN      22
-  #define EP0_SIZE    64
+  #define EP0_SIZE              64
 
   #define NUM_ENDPOINTS         5
-  #define NUM_INTERFACE   3
-  #define CDC_IAD_DESCRIPTOR  1
+  #define NUM_INTERFACE         3
+  #define CDC_IAD_DESCRIPTOR    1
   #define CDC_STATUS_INTERFACE  0
-  #define CDC_DATA_INTERFACE  1 // Serial
-  #define CDC_ACM_ENDPOINT  2
+  #define CDC_DATA_INTERFACE    1 // Serial
+  #define CDC_ACM_ENDPOINT      2
   #define CDC_RX_ENDPOINT       3
   #define CDC_TX_ENDPOINT       3
   #define CDC_ACM_SIZE          16
@@ -26,7 +26,7 @@
   #define CDC_TX_SIZE_480       512
   #define CDC_RX_SIZE_12        64
   #define CDC_TX_SIZE_12        64
-  
+
   #define ENDPOINT2_CONFIG  ENDPOINT_RECEIVE_UNUSED + ENDPOINT_TRANSMIT_INTERRUPT
   #define ENDPOINT3_CONFIG  ENDPOINT_RECEIVE_BULK + ENDPOINT_TRANSMIT_BULK
 
@@ -44,4 +44,4 @@
   #define MTP_EVENT_INTERVAL_480 7  // 7 = 8 ms
 
   #define ENDPOINT4_CONFIG  ENDPOINT_RECEIVE_BULK + ENDPOINT_TRANSMIT_BULK
-  #define ENDPOINT5_CONFIG  ENDPOINT_RECEIVE_UNUSED + ENDPOINT_TRANSMIT_INTERRUPT  // ????
+  #define ENDPOINT5_CONFIG  ENDPOINT_RECEIVE_INTERRUPT + ENDPOINT_TRANSMIT_INTERRUPT  // ????

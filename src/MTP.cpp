@@ -43,8 +43,9 @@
 extern struct usb_string_descriptor_struct usb_string_serial_number; 
 
 #define DEBUG 2
+#define DBGSerial Serial
 #if DEBUG>0
-  #define printf(...) Serial.printf(__VA_ARGS__)
+  #define printf(...) DBGSerial.printf(__VA_ARGS__)
 #else
   #define printf(...) 
 #endif
@@ -1430,6 +1431,7 @@ const uint16_t supported_events[] =
     void MTPD::_printContainer(MTPContainer *c, const char *msg) {
       int print_property_name = -1;  //no
       if (msg) printf("%s", msg);
+      printf("%u ", millis());
       switch (c->type) {
       default: printf(" UNKWN: %x", c->type); break;
       case MTP_CONTAINER_TYPE_COMMAND: printf(F("CMD: ")); break;
