@@ -58,10 +58,14 @@ public:
 
   explicit MTPD(MTPStorageInterface* storage): storage_(storage) {}
   int begin();
+
+  static inline Stream* PrintStream(void) {return printStream_;}
+  static void PrintStream(Stream *stream) {printStream_ = stream;}
   
 private:
   MTPStorageInterface* storage_;
-
+  static Stream *printStream_;
+   
   struct MTPHeader {
     uint32_t len;  // 0
     uint16_t type; // 4

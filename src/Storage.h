@@ -62,28 +62,9 @@ class mSD_Base
     mSD_Base() {
       fsCount = 0;
     }
-    uint32_t sd_addFilesystem(FS &fs, const char *name, MTPStorageInterfaceCB *callback, uint32_t user_token) {
-      if (fsCount < MTPD_MAX_FILESYSTEMS) {
-        sd_name[fsCount] = name;
-        sdx[fsCount] = &fs;
-        callbacks[fsCount] = callback;
-        user_tokens[fsCount] = user_token;
-        Serial.printf("sd_addFilesystem: %d %x %s %x %x\n", fsCount, (uint32_t)&fs, name, (uint32_t)callback, user_token);
-        return fsCount++;
-      }
-      return 0xFFFFFFFFUL;  // no room left
-    }
+    uint32_t sd_addFilesystem(FS &fs, const char *name, MTPStorageInterfaceCB *callback, uint32_t user_token);
 
-    bool sd_removeFilesystem(uint32_t store)
-    {
-      if ((store < (uint32_t)fsCount) && (sd_name[store])) {
-        sd_name[store] = nullptr;
-        sdx[store] = nullptr;
-        return true;
-      }
-      return false;;
-
-    }
+    bool sd_removeFilesystem(uint32_t store);
 
     uint32_t sd_getStoreID( const char *name)
     {

@@ -15,11 +15,11 @@ PFsLib pfsLIB;
 uint8_t SDMTPClass::formatStore(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token, uint32_t p2, bool post_process)
 {
   // Lets map the user_token back to oint to our object...
-  Serial.printf("Format Callback: user_token:%x store: %u p2:%u post:%u \n", user_token, store, p2, post_process);
+  MTPD::PrintStream()->printf("Format Callback: user_token:%x store: %u p2:%u post:%u \n", user_token, store, p2, post_process);
   SDClass *psd = (SDClass*)user_token;
 
   if (psd->sdfs.fatType() == FAT_TYPE_FAT12) {
-    Serial.printf("    Fat12 not supported\n");
+    MTPD::PrintStream()->printf("    Fat12 not supported\n");
     return MTPStorageInterfaceCB::FORMAT_NOT_SUPPORTED;
   }
 
@@ -35,31 +35,33 @@ uint8_t SDMTPClass::formatStore(MTPStorage_SD *mtpstorage, uint32_t store, uint3
 uint64_t SDMTPClass::usedSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token)
 {
   // Courious how often called and how long it takes...
-  Serial.printf("\n\n}}}}}}}}} SDMTPClass::usedSizeCB called %x %u %u cs:%u ", (uint32_t)mtpstorage, store, user_token, csPin_);
+  MTPD::PrintStream()->printf("\n\n}}}}}}}}} SDMTPClass::usedSizeCB called %x %u %u cs:%u ", (uint32_t)mtpstorage, store, user_token, csPin_);
   if (!disk_valid_) {
-    Serial.println("* not inserted *");
+    MTPD::PrintStream()->println("* not inserted *");
     return 0l;
   }
-  Serial.printf("ft:%u\n", sdfs.vol()->fatType());
-
+  MTPD::PrintStream()->printf("ft:%u\n", sdfs.vol()->fatType());
   elapsedMillis em = 0;
-  uint64_t us = usedSize();
-  Serial.println(em, DEC);
+  uint64_t us;
+  if (info_sector_free_clusters_)us = (sdfs.clusterCount() - info_sector_free_clusters_) * (uint64_t)sdfs.bytesPerCluster();
+  else us = usedSize();
+
+  MTPD::PrintStream()->printf ("us:%u t:%u\n", (uint32_t)us, (uint32_t)em);
   return us;
 }
 
 uint64_t SDMTPClass::totalSizeCB(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token)
 {
   // Courious how often called and how long it takes...
-  Serial.printf("\n\n{{{{{{{{{ SDMTPClass::totalSizeCB called %x %u %u cs:%u ", (uint32_t)mtpstorage, store, user_token, csPin_);
+  MTPD::PrintStream()->printf("\n\n{{{{{{{{{ SDMTPClass::totalSizeCB called %x %u %u cs:%u ", (uint32_t)mtpstorage, store, user_token, csPin_);
   if (!disk_valid_) {
-    Serial.println("* not inserted *");
+    MTPD::PrintStream()->println("* not inserted *");
     return 0l;
   }
-  Serial.printf("ft:%u\n", sdfs.vol()->fatType());
+  MTPD::PrintStream()->printf("ft:%u\n", sdfs.vol()->fatType());
   elapsedMillis em = 0;
   uint64_t us = totalSize();
-  Serial.println(em, DEC);
+  MTPD::PrintStream()->println(em, DEC);
   return us;
 }
 
@@ -72,7 +74,7 @@ void SDMTPClass::dateTime(uint16_t* date, uint16_t* time, uint8_t* ms10)
   *date = FS_DATE(year(), month(), day());
   *time = FS_TIME(hour(), minute(), second());
   *ms10 = second() & 1 ? 100 : 0;
-  Serial.printf("### dateTime: called %x %x %x\n", *date, *time, *ms10);
+  MTPD::PrintStream()->printf("### dateTime: called %x %x %x\n", *date, *time, *ms10);
 }
 
 
@@ -97,7 +99,7 @@ bool  SDMTPClass::init(bool add_if_missing) {
 #ifdef _SD_DAT3
       cdPin_ = _SD_DAT3;
       pinMode(_SD_DAT3, INPUT_PULLDOWN);
-      check_disk_insertion_ = true;
+      loop_tasks_ = LOOP_TASKS_CHECK_INSERT;
       disk_inserted_time_ = 0;
       //return true;
 #else
@@ -108,16 +110,13 @@ bool  SDMTPClass::init(bool add_if_missing) {
   else
 #endif
   {
-    Serial.printf("Trying to open SPI config: %u %u %u %u\n", csPin_, cdPin_, opt_, maxSpeed_);
+    MTPD::PrintStream()->printf("Trying to open SPI config: %u %u %u %u\n", csPin_, cdPin_, opt_, maxSpeed_);
     if (!(disk_valid_ = sdfs.begin(SdSpiConfig(csPin_, opt_, maxSpeed_, port_)))) {
-      Serial.println("    Failed to open");
+      MTPD::PrintStream()->println("    Failed to open");
       if (!add_if_missing || (cdPin_ == 0xff)) return false; // Not found and no add or not detect
       disk_inserted_time_ = 0;
       //return true;
-    }
-    // if cd Pin defined configure it to check in the looop function. 
-    if (cdPin_) {
-      check_disk_insertion_ = true;
+      loop_tasks_ = LOOP_TASKS_CHECK_INSERT;
       pinMode(cdPin_, INPUT_PULLUP);  // connects I think to SDCard frame ground
     }
   }
@@ -127,59 +126,68 @@ bool  SDMTPClass::init(bool add_if_missing) {
 
 
 bool SDMTPClass::loop(MTPStorage_SD *mtpstorage, uint32_t store, uint32_t user_token) {
-  //Serial.printf("SDMTPClass::loop %u\n", csPin_);
+  //MTPD::PrintStream()->printf("SDMTPClass::loop %u\n", csPin_);
 
-  if (!check_disk_insertion_) return true; // bail quick
-  // delayMicroseconds(5);
-  if (digitalRead(cdPin_)) {
-    delay(1); // give it some time to settle; 
-    if (!digitalRead(cdPin_)) return true; // double check.
-    if (disk_inserted_time_ == 0) disk_inserted_time_ = millis(); // when did we detect it...
-    // looks like SD Inserted. so disable the pin for now...
-    // BUGBUG for SPI ones with extra IO pins can do more...
-
-    delay(25);  // time to stabilize 
-    Serial.printf("\n*** SD Card Inserted ***");
-    #ifdef BUILTIN_SDCARD
+  if (loop_tasks_ & LOOP_TASKS_CHECK_INSERT) {
+    // Check for insertions and in some case removals of disks...
+    #ifdef _SD_DAT3
     if (csPin_ == BUILTIN_SDCARD) {
-      Serial.println("Trying to begin SDIO config");
+      // BUGBUG:: what if SDCard is slow startup and first try disables the csPin?
+      // some of this and the normal pins can maybe be combined although not 
+      // sure as for cases of detecting removal and above to maybe handle slow card start...
+      if (digitalRead(cdPin_)) {
+      delay(1); // give it some time to settle; 
+      if (!digitalRead(cdPin_)) return true; // double check.
+      if (disk_inserted_time_ == 0) disk_inserted_time_ = millis(); // when did we detect it...
+      delay(25);  // time to stabilize 
+      MTPD::PrintStream()->printf("\n*** SDIO Card Inserted ***");
+
+      // Note this will probably disable the SD_DAT3 pin... i.e. convert it to SDIO mode
       if (!(disk_valid_ = sdfs.begin(SdioConfig(FIFO_SDIO)))) {
         #ifdef _SD_DAT3
         //pinMode(_SD_DAT3, INPUT_PULLDOWN);  // it failed try to reinit again
         #endif
-        Serial.println("    Begin Failed");
+        MTPD::PrintStream()->println("    Begin Failed");
         if ((millis() - disk_inserted_time_) > DISK_INSERT_TEST_TIME) {
-          pinMode(cdPin_, INPUT_DISABLE);
-          check_disk_insertion_ = false; // only try this once        
-          Serial.println("    Time Out");
+          //pinMode(cdPin_, INPUT_DISABLE);
+          loop_tasks_ = false; // only try this once        
+          MTPD::PrintStream()->println("    Time Out");
         }
         return true; // bail
       }
 
-      //pinMode(cdPin_, INPUT_DISABLE);  // shoot self in foot..
-      check_disk_insertion_ = false; // only try this once
-    }
-    else
+        loop_tasks_ = LOOP_TASKS_NONE; // only try this once
+      }
+    } else  
     #endif
     {
-      Serial.printf("Trying to begin SPI config: %u %u %u %u\n", csPin_, cdPin_, opt_, maxSpeed_);
-      if (!(disk_valid_ = sdfs.begin(SdSpiConfig(csPin_, opt_, maxSpeed_, port_)))) {
-        Serial.println("    Begin Failed");
-        if ((millis() - disk_inserted_time_) > DISK_INSERT_TEST_TIME) {
-          pinMode(cdPin_, INPUT_DISABLE);
-          check_disk_insertion_ = false; // only try this once        
-          Serial.println("    Time Out");
+
+      // delayMicroseconds(5);
+      if (digitalRead(cdPin_)) {
+        delay(1); // give it some time to settle; 
+        if (!digitalRead(cdPin_)) return true; // double check.
+        if (disk_inserted_time_ == 0) disk_inserted_time_ = millis(); // when did we detect it...
+        // looks like SD Inserted. so disable the pin for now...
+        // BUGBUG for SPI ones with extra IO pins can do more...
+
+        delay(25);  // time to stabilize 
+        MTPD::PrintStream()->printf("*** SD SPI Card (%u %u %u %u) Inserted ***\n", csPin_, cdPin_, opt_, maxSpeed_);
+        if (!(disk_valid_ = sdfs.begin(SdSpiConfig(csPin_, opt_, maxSpeed_, port_)))) {
+          MTPD::PrintStream()->println("    Begin Failed");
+          if ((millis() - disk_inserted_time_) > DISK_INSERT_TEST_TIME) {
+            pinMode(cdPin_, INPUT_DISABLE);
+            loop_tasks_ = LOOP_TASKS_NONE; // only try this once        
+            MTPD::PrintStream()->println("    Time Out");
+          }
+          // pinMode(cdPin_, INPUT_PULLDOWN);  // BUGBUG retury?  But first probably only when other removed?
+          return true;
         }
-        // pinMode(cdPin_, INPUT_PULLDOWN);  // BUGBUG retury?  But first probably only when other removed?
-        return true;
+        // not sure yet.. may not do this after it works. 
+        pinMode(cdPin_, INPUT_DISABLE);
+        loop_tasks_ = LOOP_TASKS_NONE; // only try this once
       }
-      // not sure yet.. may not do this after it works. 
-      pinMode(cdPin_, INPUT_DISABLE);
-      check_disk_insertion_ = false; // only try this once
+      addFSToStorage(true); // do the work to add us to the storage list.
     }
-    addFSToStorage(true); // do the work to add us to the storage list.
-  } else {
-    //
   }
   return true;
 }
@@ -190,9 +198,32 @@ void SDMTPClass::addFSToStorage(bool send_events)
   if (disk_valid_) {
     // only called if the disk is actually there...
     uint64_t ts = totalSize();
-    uint64_t us  = usedSize();
-    Serial.print("Total Size: "); Serial.print(ts);
-    Serial.print(" Used Size: "); Serial.println(us);
+    MTPD::PrintStream()->print("Total Size: "); MTPD::PrintStream()->print(ts);
+
+    // BUGBUG:: There are issues with FAT32, that the
+    // default usedSize can take many (like sometimes 10) seconds
+    // to compute... So if done at program startup (like here), can
+    // cause side effects like maybe MTP bails or Serial does not work
+    // If done when MTP enums storages, can cause MTP to bail... 
+    // So lets try to shortcut it. 
+
+    uint64_t us;
+    if (sdfs.vol()->fatType() == 32) {
+      // Lets try pfsVolume code...
+      PFsVolume partVol;
+      if (partVol.begin(sdfs.card(), true, 1)) {
+        info_sector_free_clusters_ = partVol.getFSInfoSectorFreeClusterCount();
+        us = (sdfs.clusterCount() - info_sector_free_clusters_) * (uint64_t)sdfs.bytesPerCluster();
+      } else {
+        us = ts / 2;  // Hack say we have half space...
+      }
+
+
+    } else {
+       us  = usedSize();
+
+    }
+   MTPD::PrintStream()->print(" Used Size: "); MTPD::PrintStream()->println(us);
   }
 
   // The SD is valid now...
@@ -203,12 +234,12 @@ void SDMTPClass::addFSToStorage(bool send_events)
     delay(50);
     //mtpd_.send_StorageInfoChangedEvent(store);
     //if(send_events) mtpd_.send_StoreAddedEvent(store);
-    Serial.println("SDMTPClass::addFSToStorage - Disk in list, try reset event");
+    MTPD::PrintStream()->println("SDMTPClass::addFSToStorage - Disk in list, try reset event");
     if(send_events) mtpd_.send_DeviceResetEvent();
 
   } else {
     // not in our list, try adding it
-    Serial.println("addFSToStorage: Added FS"); 
+    MTPD::PrintStream()->println("addFSToStorage: Added FS"); 
     store_ = storage_.addFilesystem(*this, sdc_name_, this, (uint32_t)(void*)this);
     if(send_events) mtpd_.send_StoreAddedEvent(store_);
   }

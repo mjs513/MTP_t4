@@ -57,8 +57,10 @@ private:
   uint32_t store_;
 
   // Currently SDIO only, may add. SPI ones later
-  bool check_disk_insertion_ = false;
+  enum {LOOP_TASKS_NONE=0, LOOP_TASKS_CHECK_INSERT=0x01};
+  uint8_t loop_tasks_ = LOOP_TASKS_NONE;
   bool disk_valid_ = false;
+  uint32_t info_sector_free_clusters_ = 0;
   uint32_t disk_inserted_time_ = 0;
   enum {DISK_INSERT_TEST_TIME=2000};
 };
