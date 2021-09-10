@@ -3,7 +3,7 @@
 #include "SD.h"
 #include <MTP.h>
 
-#define USE_SD  1         // SDFAT based SDIO and SPI
+#define USE_SD  0         // SDFAT based SDIO and SPI
 #ifdef ARDUINO_TEENSY41
 #define USE_LFS_RAM 0     // T4.1 PSRAM (or RAM)
 #else
@@ -19,8 +19,8 @@
 #else
 #define USE_LFS_QSPI 0    // T4.1 QSPI
 #define USE_LFS_PROGM 1   // T4.4 Progam Flash
-#define USE_LFS_SPI 1     // SPI Flash
-#define USE_LFS_NAND 0
+#define USE_LFS_SPI 0     // SPI Flash
+#define USE_LFS_NAND 1
 #define USE_LFS_QSPI_NAND 0
 #define USE_LFS_FRAM 0
 #endif
@@ -43,13 +43,13 @@ uint32_t last_storage_index = (uint32_t)-1;
                             MTPStorage_SD storage;
                             MTPD    mtpd(&storage);
 
+#include "TimeLib.h"
 
 //=============================================================================
 // MSC & SD classes
 //=============================================================================
 #if USE_SD==1
 #include <SDMTPClass.h>
-#include "TimeLib.h"
 
 #define USE_BUILTIN_SDCARD
 #if defined(USE_BUILTIN_SDCARD) && defined(BUILTIN_SDCARD)
@@ -121,15 +121,15 @@ const int lfs_ram_size[] = {200'000,4'000'000}; // edit to reflect your configur
 #endif
 
 #if USE_LFS_SPI==1
-                            const char *lfs_spi_str[]={"sflash7"}; // edit to reflect your configuration
-                            const int lfs_cs[] = {7}; // edit to reflect your configuration
+                            const char *lfs_spi_str[]={"sflash8", "sflash9"}; // edit to reflect your configuration
+                            const int lfs_cs[] = {8, 9}; // edit to reflect your configuration
                             const int nfs_spi = sizeof(lfs_spi_str)/sizeof(const char *);
 
                             LittleFS_SPIFlash spifs[nfs_spi];
 #endif
 #if USE_LFS_NAND == 1
-                            const char *nspi_str[]={"WINBOND1G", "WINBOND2G"};     // edit to reflect your configuration
-                            const int nspi_cs[] = {3,4}; // edit to reflect your configuration
+                            const char *nspi_str[]={"WINBOND1G", "WINBOND2G","WINBONDxG", "WINBONDyG"};     // edit to reflect your configuration
+                            const int nspi_cs[] = {3, 4, 5, 6}; // edit to reflect your configuration
                             const int nspi_nsd = sizeof(nspi_cs)/sizeof(int);
                             LittleFS_SPINAND nspifs[nspi_nsd]; // needs to be declared if LittleFS is used in storage.h
 #endif
@@ -141,8 +141,18 @@ void storage_configure()
   
   Serial.printf("Date: %u/%u/%u %u:%u:%u\n", day(), month(), year(),
                 hour(), minute(), second());
+
   storage.setIndexStore(0);
-  Serial.printf("Set Storage Index drive to Storage 0\n");
+  
+  // lets initialize a RAM drive. 
+/*  if (lfsram.begin (LFSRAM_SIZE)) {
+    Serial.printf("Ram Drive of size: %u initialized\n", LFSRAM_SIZE);
+    lfsmtpcb.set_formatLevel(true);  //sets formating to lowLevelFormat
+    uint32_t istore = storage.addFilesystem(lfsram, "RAM", &lfsmtpcb, (uint32_t)(LittleFS*)&lfsram);
+    if (istore != 0xFFFFFFFFUL) storage.setIndexStore(istore);
+    Serial.printf("Set Storage Index drive to %u\n", istore);
+  }
+*/    
     
 #if USE_SD == 1
   // Try to add all of them. 
@@ -214,7 +224,8 @@ void storage_configure()
 #if USE_LFS_SPI==1
   for(int ii=0; ii<nfs_spi;ii++)
   {
-    if(!spifs[ii].begin(lfs_cs[ii], SPI1))
+    pinMode(lfs_cs[ii],OUTPUT); digitalWriteFast(lfs_cs[ii],HIGH);
+    if(!spifs[ii].begin(lfs_cs[ii], SPI))
     { Serial.printf("SPIFlash Storage %d %d %s failed or missing",ii,lfs_cs[ii],lfs_spi_str[ii]); Serial.println();
     }
     else
