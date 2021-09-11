@@ -7,7 +7,7 @@
 //---------------------------------------------------
 // Select drives you want to create
 //---------------------------------------------------
-#define USE_SD  0         // SDFAT based SDIO and SPI
+#define USE_SD  1         // SDFAT based SDIO and SPI
 #ifdef ARDUINO_TEENSY41
 #define USE_LFS_RAM 0     // T4.1 PSRAM (or RAM)
 #else
@@ -68,11 +68,11 @@ uint8_t current_store = 0;
 #define SPI_SPEED SD_SCK_MHZ(16)  // adjust to sd card 
 
 #define COUNT_MYFS  1  // could do by count, but can limit how many are created...
-SDMTPClass myfs[] = {
+SDMTPClass mySD[] = {
 //                      {mtpd, storage, "SDIO", CS_SD}, 
                       {mtpd, storage, "SD8", 8, 9, SHARED_SPI, SPI_SPEED}
                     };
-//SDMTPClass myfs(mtpd, storage, "SD10", 10, 0xff, SHARED_SPI, SPI_SPEED);
+//SDMTPClass mySD(mtpd, storage, "SD10", 10, 0xff, SHARED_SPI, SPI_SPEED);
 
 #endif
 
@@ -130,15 +130,15 @@ const int lfs_ram_size[] = {200'000,4'000'000}; // edit to reflect your configur
 #endif
 
 #if USE_LFS_SPI==1
-                            const char *lfs_spi_str[]={"sflash8", "sflash9"}; // edit to reflect your configuration
-                            const int lfs_cs[] = {8, 9}; // edit to reflect your configuration
+                            const char *lfs_spi_str[]={"sflash5", "sflash6"}; // edit to reflect your configuration
+                            const int lfs_cs[] = {5, 6}; // edit to reflect your configuration
                             const int nfs_spi = sizeof(lfs_spi_str)/sizeof(const char *);
 
                             LittleFS_SPIFlash spifs[nfs_spi];
 #endif
 #if USE_LFS_NAND == 1
-                            const char *nspi_str[]={"WINBOND1G", "WINBOND2G","WINBONDxG", "WINBONDyG"};     // edit to reflect your configuration
-                            const int nspi_cs[] = {3, 4, 5, 6}; // edit to reflect your configuration
+                            const char *nspi_str[]={"WINBOND1G", "WINBOND2G"};     // edit to reflect your configuration
+                            const int nspi_cs[] = {3, 4}; // edit to reflect your configuration
                             const int nspi_nsd = sizeof(nspi_cs)/sizeof(int);
                             LittleFS_SPINAND nspifs[nspi_nsd]; // needs to be declared if LittleFS is used in storage.h
 #endif
@@ -167,7 +167,7 @@ void storage_configure()
   // Try to add all of them. 
   bool storage_added = false;
   for (uint8_t i = 0 ; i < COUNT_MYFS; i++) {
-    storage_added |= myfs[i].init(true);
+    storage_added |= mySD[i].init(true);
   }
   if (!storage_added) {
     DBGSerial.println("Failed to add any valid storage objects");
