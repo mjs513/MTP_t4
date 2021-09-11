@@ -41,21 +41,21 @@ uint8_t current_store = 0;
   USB_MSC_MTP usbmsc(mtpd, storage);
 
 //Setup up arrays for using 2 SPI NOR Flash Chips
-  const char *lfs_spi_str[]={"sflash8","sflash9" }; // edit to reflect your configuration
-  const int lfs_cs[] = {8, 9}; // edit to reflect your configuration
+  const char *lfs_spi_str[]={"sflash5","sflash6" }; // edit to reflect your configuration
+  const int lfs_cs[] = {5, 6}; // edit to reflect your configuration
   const int nfs_spi = sizeof(lfs_spi_str)/sizeof(const char *);
   LittleFS_SPIFlash spifs[nfs_spi];
 
 //Since we have only 1 NAND SPI flash, setup will be in storage Configure
     LittleFS_SPINAND lfsNAND;
-    #define nandCS 7
+    #define nandCS 4
     
 #define DBGSerial Serial
 
 //convient for setting up multiple storage configurations
 void storage_configure()
 {
-  
+#if (1)
   // lets initialize a RAM drive and set the index file to RAM Drive.
   if (lfsram.begin (LFSRAM_SIZE)) {
     DBGSerial.printf("Ram Drive of size: %u initialized\n", LFSRAM_SIZE);
@@ -64,9 +64,11 @@ void storage_configure()
     if (istore != 0xFFFFFFFFUL) storage.setIndexStore(istore);
     DBGSerial.printf("Set Storage Index drive to %u\n", istore);
   }
-
-   //storage.setIndexStore(0);
-  
+#else
+   storage.setIndexStore(0);    //Default configuration
+   DBGSerial.printf("Storage Index drive to 0\n");
+   
+#endif
   //configure MTP for SPI NOR Flash
   for(int ii=0; ii<nfs_spi;ii++)
   {
@@ -91,10 +93,10 @@ void storage_configure()
     }
     else
     {
-      storage.addFilesystem(lfsNAND, "NAND7", &lfsmtpcb, (uint32_t)(LittleFS*)&lfsNAND);
+      storage.addFilesystem(lfsNAND, "NAND3", &lfsmtpcb, (uint32_t)(LittleFS*)&lfsNAND);
       uint64_t totalSize = lfsNAND.totalSize();
       uint64_t usedSize  = lfsNAND.usedSize();
-      Serial.printf("NAND SPIFlash Storage %d %d %s ",0 ,nandCS,"NAND7"); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
+      Serial.printf("NAND SPIFlash Storage %d %d %s ",0 ,nandCS,"NAND3"); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
     }
 
 
