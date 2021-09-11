@@ -2,7 +2,11 @@
 
 #include "SD.h"
 #include <MTP.h>
+#include "TimeLib.h"
 
+//---------------------------------------------------
+// Select drives you want to create
+//---------------------------------------------------
 #define USE_SD  0         // SDFAT based SDIO and SPI
 #ifdef ARDUINO_TEENSY41
 #define USE_LFS_RAM 0     // T4.1 PSRAM (or RAM)
@@ -19,7 +23,7 @@
 #else
 #define USE_LFS_QSPI 0    // T4.1 QSPI
 #define USE_LFS_PROGM 1   // T4.4 Progam Flash
-#define USE_LFS_SPI 0     // SPI Flash
+#define USE_LFS_SPI 1     // SPI Flash
 #define USE_LFS_NAND 1
 #define USE_LFS_QSPI_NAND 0
 #define USE_LFS_FRAM 0
@@ -34,6 +38,12 @@ extern "C" {
 bool g_lowLevelFormat = true;
 uint32_t last_storage_index = (uint32_t)-1;
 
+#define DBGSerial Serial
+File dataFile;  // Specifes that dataFile is of File type
+int record_count = 0;
+bool write_data = false;
+uint32_t diskSize;
+uint8_t current_store = 0;
 
 //=============================================================================
 // Global defines
@@ -42,8 +52,6 @@ uint32_t last_storage_index = (uint32_t)-1;
 
                             MTPStorage_SD storage;
                             MTPD    mtpd(&storage);
-
-#include "TimeLib.h"
 
 //=============================================================================
 // MSC & SD classes
@@ -68,32 +76,33 @@ SDMTPClass myfs[] = {
 
 #endif
 
+
+//========================================================================
+//This puts a the index file in memory as opposed to an SD Card in memory
+//and uses it as the starting pointer to a filesystem so keep no matter
+//========================================================================
+	#include "LittleFS.h"
+	#define LFSRAM_SIZE 65536  // probably more than enough...
+	LittleFS_RAM lfsram;
+	FS *myfs = &lfsram; // current default FS...
+	
 //=========================================================================
 // USB MSC Class setup
 //=========================================================================
-#if USE_MSC > 0
-#include <USB_MSC_MTP.h>
-USB_MSC_MTP usbmsc(mtpd, storage);
-FS* mscDisk;
-#endif
+	#if USE_MSC > 0
+	#include <USB_MSC_MTP.h>
+	USB_MSC_MTP usbmsc(mtpd, storage);
+	#endif
 
 #if USE_LFS_RAM==1 ||  USE_LFS_PROGM==1 || USE_LFS_QSPI==1 || USE_LFS_SPI==1 || USE_LFS_NAND==1 ||  USE_LFS_QSPI_NAND==1
-#include "LittleFS.h"
 //=============================================================================
 //LittleFS classes
 //=============================================================================
 // Setup a callback class for Littlefs storages..
-#include <LFS_MTP_Callback.h>  //callback for LittleFS format
-LittleFSMTPCB lfsmtpcb;
+	#include <LFS_MTP_Callback.h>  //callback for LittleFS format
+	LittleFSMTPCB lfsmtpcb;
 #endif
 
-#if USE_SD == 1
-//========================================================================
-//This puts a the index file in memory as opposed to an SD Card in memory
-//========================================================================
-#define LFSRAM_SIZE 65536  // probably more than enough...
-LittleFS_RAM lfsram;
-#endif
 
 // =======================================================================
 // Set up LittleFS file systems on different storage media
@@ -138,21 +147,21 @@ const int lfs_ram_size[] = {200'000,4'000'000}; // edit to reflect your configur
 
 void storage_configure()
 {
-  
-  Serial.printf("Date: %u/%u/%u %u:%u:%u\n", day(), month(), year(),
+  DBGSerial.printf("Date: %u/%u/%u %u:%u:%u\n", day(), month(), year(),
                 hour(), minute(), second());
-
-  storage.setIndexStore(0);
-  
-  // lets initialize a RAM drive. 
-/*  if (lfsram.begin (LFSRAM_SIZE)) {
-    Serial.printf("Ram Drive of size: %u initialized\n", LFSRAM_SIZE);
+#if (1)
+	// lets initialize a RAM drive. 
+    if (lfsram.begin (LFSRAM_SIZE)) {
+    DBGSerial.printf("Ram Drive of size: %u initialized\n", LFSRAM_SIZE);
     lfsmtpcb.set_formatLevel(true);  //sets formating to lowLevelFormat
     uint32_t istore = storage.addFilesystem(lfsram, "RAM", &lfsmtpcb, (uint32_t)(LittleFS*)&lfsram);
     if (istore != 0xFFFFFFFFUL) storage.setIndexStore(istore);
-    Serial.printf("Set Storage Index drive to %u\n", istore);
+    DBGSerial.printf("Set Storage Index drive to %u\n", istore);
   }
-*/    
+#else
+   storage.setIndexStore(0);
+   DBGSerial.println("Set Storage Index to default drive 0");
+#endif
     
 #if USE_SD == 1
   // Try to add all of them. 
@@ -161,7 +170,7 @@ void storage_configure()
     storage_added |= myfs[i].init(true);
   }
   if (!storage_added) {
-    Serial.println("Failed to add any valid storage objects");
+    DBGSerial.println("Failed to add any valid storage objects");
     pinMode(13, OUTPUT);
     while (1) {
       digitalToggleFast(13);
@@ -169,7 +178,7 @@ void storage_configure()
     }
   }
   
-    Serial.println("SD initialized.");
+    DBGSerial.println("SD initialized.");
 #endif
 
 
@@ -177,14 +186,14 @@ void storage_configure()
   for(int ii=0; ii<nfs_ram;ii++)
   {
     if(!ramfs[ii].begin(lfs_ram_size[ii]))
-    { Serial.printf("Ram Storage %d %s failed or missing",ii,lfs_ram_str[ii]); Serial.println();
+    { DBGSerial.printf("Ram Storage %d %s failed or missing",ii,lfs_ram_str[ii]); DBGSerial.println();
     }
     else
     {
       storage.addFilesystem(ramfs[ii], lfs_ram_str[ii], &lfsmtpcb, (uint32_t)(LittleFS*)&ramfs[ii]);
       uint64_t totalSize = ramfs[ii].totalSize();
       uint64_t usedSize  = ramfs[ii].usedSize();
-      Serial.printf("RAM Storage %d %s ",ii,lfs_ram_str[ii]); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
+      DBGSerial.printf("RAM Storage %d %s ",ii,lfs_ram_str[ii]); DBGSerial.print(totalSize); DBGSerial.print(" "); DBGSerial.println(usedSize);
     }
   }
 #endif
@@ -193,14 +202,14 @@ void storage_configure()
   for(int ii=0; ii<nfs_progm;ii++)
   {
     if(!progmfs[ii].begin(lfs_progm_size[ii]))
-    { Serial.printf("Program Storage %d %s failed or missing",ii,lfs_progm_str[ii]); Serial.println();
+    { DBGSerial.printf("Program Storage %d %s failed or missing",ii,lfs_progm_str[ii]); DBGSerial.println();
     }
     else
     {
       storage.addFilesystem(progmfs[ii], lfs_progm_str[ii], &lfsmtpcb, (uint32_t)(LittleFS*)&progmfs[ii]);
       uint64_t totalSize = progmfs[ii].totalSize();
       uint64_t usedSize  = progmfs[ii].usedSize();
-      Serial.printf("Program Storage %d %s ",ii,lfs_progm_str[ii]); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
+      DBGSerial.printf("Program Storage %d %s ",ii,lfs_progm_str[ii]); DBGSerial.print(totalSize); DBGSerial.print(" "); DBGSerial.println(usedSize);
     }
   }
 #endif
@@ -209,14 +218,14 @@ void storage_configure()
   for(int ii=0; ii<nfs_qspi;ii++)
   {
     if(!qspifs[ii].begin())
-    { Serial.printf("QSPI Storage %d %s failed or missing",ii,lfs_qspi_str[ii]); Serial.println();
+    { DBGSerial.printf("QSPI Storage %d %s failed or missing",ii,lfs_qspi_str[ii]); DBGSerial.println();
     }
     else
     {
       storage.addFilesystem(qspifs[ii], lfs_qspi_str[ii], &lfsmtpcb, (uint32_t)(LittleFS*)&qspifs[ii]);
       uint64_t totalSize = qspifs[ii].totalSize();
       uint64_t usedSize  = qspifs[ii].usedSize();
-      Serial.printf("QSPI Storage %d %s ",ii,lfs_qspi_str[ii]); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
+      DBGSerial.printf("QSPI Storage %d %s ",ii,lfs_qspi_str[ii]); DBGSerial.print(totalSize); DBGSerial.print(" "); DBGSerial.println(usedSize);
     }
   }
 #endif
@@ -226,14 +235,14 @@ void storage_configure()
   {
     pinMode(lfs_cs[ii],OUTPUT); digitalWriteFast(lfs_cs[ii],HIGH);
     if(!spifs[ii].begin(lfs_cs[ii], SPI))
-    { Serial.printf("SPIFlash Storage %d %d %s failed or missing",ii,lfs_cs[ii],lfs_spi_str[ii]); Serial.println();
+    { DBGSerial.printf("SPIFlash Storage %d %d %s failed or missing",ii,lfs_cs[ii],lfs_spi_str[ii]); DBGSerial.println();
     }
     else
     {
       storage.addFilesystem(spifs[ii], lfs_spi_str[ii], &lfsmtpcb, (uint32_t)(LittleFS*)&spifs[ii]);
       uint64_t totalSize = spifs[ii].totalSize();
       uint64_t usedSize  = spifs[ii].usedSize();
-      Serial.printf("SPIFlash Storage %d %d %s ",ii,lfs_cs[ii],lfs_spi_str[ii]); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
+      DBGSerial.printf("SPIFlash Storage %d %d %s ",ii,lfs_cs[ii],lfs_spi_str[ii]); DBGSerial.print(totalSize); DBGSerial.print(" "); DBGSerial.println(usedSize);
     }
   }
 #endif
@@ -241,7 +250,7 @@ void storage_configure()
   for(int ii=0; ii<nspi_nsd;ii++) {
     pinMode(nspi_cs[ii],OUTPUT); digitalWriteFast(nspi_cs[ii],HIGH);
     if(!nspifs[ii].begin(nspi_cs[ii], SPI)) 
-    { Serial.printf("SPIFlash NAND Storage %d %d %s failed or missing",ii,nspi_cs[ii],nspi_str[ii]); Serial.println();
+    { DBGSerial.printf("SPIFlash NAND Storage %d %d %s failed or missing",ii,nspi_cs[ii],nspi_str[ii]); DBGSerial.println();
     }
     else
     {
@@ -249,7 +258,7 @@ void storage_configure()
 
       uint64_t totalSize = nspifs[ii].totalSize();
       uint64_t usedSize  = nspifs[ii].usedSize();
-      Serial.printf("Storage %d %d %s ",ii,nspi_cs[ii],nspi_str[ii]); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
+      DBGSerial.printf("Storage %d %d %s ",ii,nspi_cs[ii],nspi_str[ii]); DBGSerial.print(totalSize); DBGSerial.print(" "); DBGSerial.println(usedSize);
     }
   }
 #endif
@@ -257,7 +266,7 @@ void storage_configure()
 #if USE_LFS_QSPI_NAND == 1
   for(int ii=0; ii<qnspi_nsd;ii++) {
     if(!qnspifs[ii].begin()) 
-    { Serial.printf("QSPI NAND Storage %d %s failed or missing",ii,qnspi_str[ii]); Serial.println();
+    { DBGSerial.printf("QSPI NAND Storage %d %s failed or missing",ii,qnspi_str[ii]); DBGSerial.println();
     }
     else
     {
@@ -265,19 +274,18 @@ void storage_configure()
 
       uint64_t totalSize = qnspifs[ii].totalSize();
       uint64_t usedSize  = qnspifs[ii].usedSize();
-      Serial.printf("Storage %d %s ",ii,qnspi_str[ii]); Serial.print(totalSize); Serial.print(" "); Serial.println(usedSize);
+      DBGSerial.printf("Storage %d %s ",ii,qnspi_str[ii]); DBGSerial.print(totalSize); DBGSerial.print(" "); DBGSerial.println(usedSize);
   }
   }
 #endif
 
 // Start USBHost_t36, HUB(s) and USB devices.
 #if USE_MSC > 0
-  Serial.println("\nInitializing USB MSC drives...");
+  DBGSerial.println("\nInitializing USB MSC drives...");
   usbmsc.checkUSBStatus(true);
 #endif
 
 }
-
 
 void setup()
 {
@@ -292,219 +300,254 @@ void setup()
     // wait for serial port to connect.
   }
 #else
-  //while(!Serial.available()); // comment if you do not want to wait for terminal (otherwise press any key to continue)
-  while (!Serial && !Serial.available() && millis() < 5000) 
+  //while(!DBGSerial.available()); // comment if you do not want to wait for terminal (otherwise press any key to continue)
+  while (!Serial && !DBGSerial.available() && millis() < 5000) 
   myusb.Task(); // or third option to wait up to 5 seconds and then continue
 #endif
 
-  Serial.print(CrashReport);
-  Serial.println("\n" __FILE__ " " __DATE__ " " __TIME__);
+  DBGSerial.print(CrashReport);
+  DBGSerial.println("\n" __FILE__ " " __DATE__ " " __TIME__);
   delay(3000);
   
   storage_configure();
   
-  Serial.println("\nSetup done");
+  DBGSerial.println("\nSetup done");
   
 }
 
 int ReadAndEchoSerialChar() {
-  int ch = Serial.read();
-  if (ch >= ' ') Serial.write(ch);
+  int ch = DBGSerial.read();
+  if (ch >= ' ') DBGSerial.write(ch);
   return ch;
 }
 
 void loop()
 {
+  if ( DBGSerial.available() ) {
+    uint8_t command = DBGSerial.read();
+    int ch = DBGSerial.read();
+    uint8_t storage_index = CommandLineReadNextNumber(ch, 0);
+    while (ch == ' ') ch = DBGSerial.read();
 
-  mtpd.loop();
-  // Call code to detect if MSC status changed
-  #if USE_MSC > 0
-  usbmsc.checkUSBStatus(false);
-  #endif
-  
-  if (Serial.available())
-  {
-    char pathname[MAX_FILENAME_LEN]; 
-    uint32_t storage_index = 0;
-    uint32_t file_size = 0;
-
-    // Should probably use Serial.parse ...
-    Serial.printf("\n *** Command line: ");
-    int cmd_char = ReadAndEchoSerialChar();
-    int ch = ReadAndEchoSerialChar();
-    while (ch == ' ') ch = ReadAndEchoSerialChar();
-    if (ch >= '0' && ch <= '9') {
-      storage_index = ch - '0';
-      ch = ReadAndEchoSerialChar();
-      if (ch == 'x') {
-        ch = ReadAndEchoSerialChar();
-        for(;;) {
-          if  (ch >= '0' && ch <= '9') storage_index = storage_index*16 + ch - '0';
-          else if  (ch >= 'a' && ch <= 'f') storage_index = storage_index*16 + 10 + ch - 'a';
-          else break;
-          ch = ReadAndEchoSerialChar();
-        }
-      }
-      else 
-      {
-        while (ch >= '0' && ch <= '9') {
-          storage_index = storage_index*10 + ch - '0';
-          ch = ReadAndEchoSerialChar();
-        }
-      }
-      while (ch == ' ') ch = ReadAndEchoSerialChar();
-      last_storage_index = storage_index;
-    } else {
-      storage_index = last_storage_index;
-    }
-    char *psz = pathname;
-    while (ch > ' ') {
-      *psz++ = ch;
-      ch = ReadAndEchoSerialChar();
-    }
-    *psz = 0;
-    while (ch == ' ') ch = ReadAndEchoSerialChar();
-    while (ch >= '0' && ch <= '9') {
-      file_size = file_size*10 + ch - '0';
-      ch = ReadAndEchoSerialChar();
-    }
-
-
-    while(ReadAndEchoSerialChar() != -1) ;
-    Serial.println();
-    switch (cmd_char) 
+    switch (command) {
+    case '1':
     {
-      case'r':
-        Serial.println("Reset");
-        mtpd.send_DeviceResetEvent();
-        break;
-      case 'd':
-        {
-          // first dump list of storages:
-          uint32_t fsCount = storage.getFSCount();
-          Serial.printf("\nDump Storage list(%u)\n", fsCount);
-          for (uint32_t ii = 0; ii < fsCount; ii++) {
-            Serial.printf("store:%u storage:%x name:%s fs:%x\n", ii, mtpd.Store2Storage(ii), storage.getStoreName(ii), (uint32_t)storage.getStoreFS(ii));
-          }
-          Serial.println("\nDump Index List");
-          storage.dumpIndexList();
-        }
-        break;    
-
-      case 'f':
-        g_lowLevelFormat = !g_lowLevelFormat;
-        if (g_lowLevelFormat) Serial.println("low level format of LittleFS disks selected");
-        else Serial.println("Quick format of LittleFS disks selected");
-        break;
-#if USE_LFS_RAM==1
-      case 'b':
-        {
-          Serial.println("Add Files");
-          static int next_file_index_to_add = 100;
-          uint32_t store = storage.getStoreID("PROGM");
-          for (int ii = 0; ii < 10; ii++)
-          { char filename[80];
-            snprintf(filename, sizeof(filename),"/test_%d.txt", next_file_index_to_add++);
-            Serial.println(filename);
-            File file = ramfs[0].open(filename, FILE_WRITE_BEGIN);
-            file.println("This is a test line");
-            file.println("This is a test line");
-            file.println("This is a test line");
-            file.println("This is a test line");
-            file.println("This is a test line");
-            file.println("This is a test line");
-            file.println("This is a test line");
-            file.println("This is a test line");
-            file.println("This is a test line");
-            file.println("This is a test line");
-            file.close();
-            mtpd.send_addObjectEvent(store, filename);
-          }
-          //  Notify PC on added files
-          Serial.print("Store "); Serial.println(store);
-          mtpd.send_StorageInfoChangedEvent(store);
-        }
-        break;
-      case 'y':
-        {
-          Serial.println("Delete Files");
-          static int next_file_index_to_delete = 100;
-          uint32_t store = storage.getStoreID("RAM1");
-          for (int ii = 0; ii < 10; ii++)
-          { char filename[80];
-            snprintf(filename, sizeof(filename), "/test_%d.txt", next_file_index_to_delete++);
-            Serial.println(filename);
-            if (ramfs[0].remove(filename))
-            {
-              mtpd.send_removeObjectEvent(store, filename);
-            }
-          }
-          // attempt to notify PC on added files (does not work yet)
-          Serial.print("Store "); Serial.println(store);
-          mtpd.send_StorageInfoChangedEvent(store);
-        }
-        break;
-#elif USE_SD==1
-      case'a':
-        {
-          Serial.println("Add Files");
-          static int next_file_index_to_add = 100;
-          uint32_t store = storage.getStoreID("sdio");
-          for (int ii = 0; ii < 10; ii++)
-          { char filename[80];
-            snprintf(filename, sizeof(filename), "/test_%d.txt", next_file_index_to_add++);
-            Serial.println(filename);
-            File file = myfs[0].open(filename, FILE_WRITE_BEGIN);
-            file.println("This is a test line");
-            file.close();
-            mtpd.send_addObjectEvent(store, filename);
-          }
-          // attempt to notify PC on added files (does not work yet)
-          Serial.print("Store "); Serial.println(store);
-          mtpd.send_StorageInfoChangedEvent(store);
-        }
-        break;
-      case 'x':
-        {
-          Serial.println("Delete Files");
-          static int next_file_index_to_delete = 100;
-          uint32_t store = storage.getStoreID("sdio");
-          for (int ii = 0; ii < 10; ii++)
-          { char filename[80];
-            snprintf(filename, sizeof(filename), "/test_%d.txt", next_file_index_to_delete++);
-            Serial.println(filename);
-            if (myfs[0].remove(filename))
-            {
-              mtpd.send_removeObjectEvent(store, filename);
-            }
-          }
-          // attempt to notify PC on added files (does not work yet)
-          Serial.print("Store "); Serial.println(store);
-          mtpd.send_StorageInfoChangedEvent(store);
-        }
-        break;
-#endif        
-      case 'e':
-        Serial.printf("Sending event: %x\n", storage_index);
-        mtpd.send_Event(storage_index);
-        break;
-      default:
-        // show list of commands.
-        Serial.println("\nCommands");
-        Serial.println("  r - Reset mtp connection");
-        Serial.println("  d - Dump storage list");
-#if USE_SD == 1
-        Serial.println("  a - Add some dummy files");
-        Serial.println("  x - delete dummy files");
-#endif
-#if USE_LFS_RAM==1
-        Serial.println("  b - Add some dummy files");
-        Serial.println("  y - delete dummy files");
-#endif
-        Serial.println("  f - toggle storage format type");
-        Serial.println("  e <event> - Send some random event");
-        break;    
-
+      // first dump list of storages:
+      uint32_t fsCount = storage.getFSCount();
+      DBGSerial.printf("\nDump Storage list(%u)\n", fsCount);
+      for (uint32_t ii = 0; ii < fsCount; ii++) {
+        DBGSerial.printf("store:%u storage:%x name:%s fs:%x\n", ii, mtpd.Store2Storage(ii), storage.getStoreName(ii), (uint32_t)storage.getStoreFS(ii));
       }
+      //DBGSerial.println("\nDump Index List");
+      //storage.dumpIndexList();
+    }
+    break;
+    case '2':
+    {
+      if (storage_index < storage.getFSCount()) {
+        DBGSerial.printf("Storage Index %u Name: %s Selected\n", storage_index, storage.getStoreName(storage_index));
+        myfs = storage.getStoreFS(storage_index);
+        current_store = storage_index;
+      } else {
+        DBGSerial.printf("Storage Index %u out of range\n", storage_index);
+      }
+    }
+    break;
+
+    case 'l': listFiles(); break;
+    case 'e': eraseFiles(); break;
+    case 's':
+    {
+      DBGSerial.println("\nLogging Data!!!");
+      write_data = true;   // sets flag to continue to write data until new command is received
+      // opens a file or creates a file if not present,  FILE_WRITE will append data to
+      // to the file created.
+      dataFile = myfs->open("datalog.txt", FILE_WRITE);
+      logData();
+    }
+    break;
+    case 'x': stopLogging(); break;
+    case'r':
+      DBGSerial.println("Reset");
+      mtpd.send_DeviceResetEvent();
+      break;
+    case 'd': dumpLog(); break;
+    case '\r':
+    case '\n':
+    case 'h': menu(); break;
+    }
+    while (DBGSerial.read() != -1) ; // remove rest of characters.
+  }
+  else
+  {
+    mtpd.loop();
+    usbmsc.checkUSBStatus(false);
+  }
+
+  if (write_data) logData();
+}
+
+
+
+void logData()
+{
+  // make a string for assembling the data to log:
+  String dataString = "";
+
+  // read three sensors and append to the string:
+  for (int analogPin = 0; analogPin < 3; analogPin++) {
+    int sensor = analogRead(analogPin);
+    dataString += String(sensor);
+    if (analogPin < 2) {
+      dataString += ",";
     }
   }
+
+  // if the file is available, write to it:
+  if (dataFile) {
+    dataFile.println(dataString);
+    // print to the serial port too:
+    DBGSerial.println(dataString);
+    record_count += 1;
+  } else {
+    // if the file isn't open, pop up an error:
+    DBGSerial.println("error opening datalog.txt");
+  }
+  delay(100); // run at a reasonable not-too-fast speed for testing
+}
+
+void stopLogging()
+{
+  DBGSerial.println("\nStopped Logging Data!!!");
+  write_data = false;
+  // Closes the data file.
+  dataFile.close();
+  DBGSerial.printf("Records written = %d\n", record_count);
+  mtpd.send_DeviceResetEvent();
+}
+
+
+void dumpLog()
+{
+  DBGSerial.println("\nDumping Log!!!");
+  // open the file.
+  dataFile = myfs->open("datalog.txt");
+
+  // if the file is available, write to it:
+  if (dataFile) {
+    while (dataFile.available()) {
+      DBGSerial.write(dataFile.read());
+    }
+    dataFile.close();
+  }
+  // if the file isn't open, pop up an error:
+  else {
+    DBGSerial.println("error opening datalog.txt");
+  }
+}
+
+void menu()
+{
+  DBGSerial.println();
+  DBGSerial.println("Menu Options:");
+  DBGSerial.println("\t1 - List Drives (Step 1)");
+  DBGSerial.println("\t2 - Select Drive for Logging (Step 2)");
+  DBGSerial.println("\tl - List files on disk");
+  DBGSerial.println("\te - Erase files on disk");
+  DBGSerial.println("\ts - Start Logging data (Restarting logger will append records to existing log)");
+  DBGSerial.println("\tx - Stop Logging data");
+  DBGSerial.println("\td - Dump Log");
+  DBGSerial.println("\tr - Reset MTP");
+  DBGSerial.println("\th - Menu");
+  DBGSerial.println();
+}
+
+void listFiles()
+{
+  DBGSerial.print("\n Space Used = ");
+  DBGSerial.println(myfs->usedSize());
+  DBGSerial.print("Filesystem Size = ");
+  DBGSerial.println(myfs->totalSize());
+
+  printDirectory(myfs);
+}
+
+extern PFsLib pfsLIB;
+void eraseFiles()
+{
+
+#if 1
+  // Lets try asking storage for enough stuff to call it's format code
+  bool send_device_reset = false;
+  MTPStorageInterfaceCB *callback = storage.getCallback(current_store);
+  uint32_t user_token = storage.getUserToken(current_store);
+  if (callback) {
+    send_device_reset = (callback->formatStore(&storage, current_store, user_token, 
+          0, true) == MTPStorageInterfaceCB::FORMAT_SUCCESSFUL);
+  } 
+  if (send_device_reset) {
+    DBGSerial.println("\nFiles erased !");
+    mtpd.send_DeviceResetEvent();    
+  } else {
+    DBGSerial.println("\n failed !");
+  }
+
+#else  
+  PFsVolume partVol;
+  if (!partVol.begin(myfs->sdfs.card(), true, 1)) {
+    DBGSerial.println("Failed to initialize partition");
+    return;
+  }
+  if (pfsLIB.formatter(partVol)) {
+    DBGSerial.println("\nFiles erased !");
+    mtpd.send_DeviceResetEvent();
+  }
+#endif  
+}
+
+void printDirectory(FS *pfs) {
+  DBGSerial.println("Directory\n---------");
+  printDirectory(pfs->open("/"), 0);
+  DBGSerial.println();
+}
+
+void printDirectory(File dir, int numSpaces) {
+  while (true) {
+    File entry = dir.openNextFile();
+    if (! entry) {
+      //DBGSerial.println("** no more files **");
+      break;
+    }
+    printSpaces(numSpaces);
+    DBGSerial.print(entry.name());
+    if (entry.isDirectory()) {
+      DBGSerial.println("/");
+      printDirectory(entry, numSpaces + 2);
+    } else {
+      // files have sizes, directories do not
+      printSpaces(36 - numSpaces - strlen(entry.name()));
+      DBGSerial.print("  ");
+      DBGSerial.println(entry.size(), DEC);
+    }
+    entry.close();
+  }
+}
+
+void printSpaces(int num) {
+  for (int i = 0; i < num; i++) {
+    DBGSerial.print(" ");
+  }
+}
+
+
+uint32_t CommandLineReadNextNumber(int &ch, uint32_t default_num) {
+  while (ch == ' ') ch = DBGSerial.read();
+  if ((ch < '0') || (ch > '9')) return default_num;
+
+  uint32_t return_value = 0;
+  while ((ch >= '0') && (ch <= '9')) {
+    return_value = return_value * 10 + ch - '0';
+    ch = DBGSerial.read();
+  }
+  return return_value;
+}
