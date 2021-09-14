@@ -39,7 +39,7 @@ SDMTPClass sdmtpSPI(mtpd, storage, "SPI8", 8, 9, SHARED_SPI, SPI_SPEED);
 // May want to wrap this all up as well
 #include <LittleFS.h>
 #include <LFS_MTP_Callback.h>
-#define LFSRAM_SIZE 65536  // probably more than enough...
+uint32_t LFSRAM_SIZE = 65536;  // probably more than enough...
 LittleFS_RAM lfsram;
 LittleFSMTPCB lfsmtpcb;
 
@@ -51,6 +51,9 @@ FS *myfs = &lfsProg; // current default FS...
 static const uint32_t file_system_size = 1024 * 512;
 
 #define DBGSerial Serial
+#ifdef ARDUINO_TEENSY41
+    extern "C" uint8_t external_psram_size;
+#endif
 
 void setup()
 {
@@ -84,6 +87,9 @@ void setup()
   sdmtpSPI.init(true);
 
   // lets initialize a RAM drive.
+  #if defined ARDUINO_TEENSY41
+  if (external_psram_size) LFSRAM_SIZE = 4*1024*1024; 
+  #endif
   if (lfsram.begin (LFSRAM_SIZE)) {
     DBGSerial.printf("Ram Drive of size: %u initialized\n", LFSRAM_SIZE);
     lfsmtpcb.set_formatLevel(true);  //sets formating to lowLevelFormat
