@@ -84,6 +84,8 @@ SDMTPClass mySD[] = {
 	#include "LittleFS.h"
 	#define LFSRAM_SIZE 65536  // probably more than enough...
 	LittleFS_RAM lfsram;
+  #include <LFS_MTP_Callback.h>  //callback for LittleFS format
+  LittleFSMTPCB lfsmtpcb;
 	FS *myfs = &lfsram; // current default FS...
 	
 //=========================================================================
@@ -99,8 +101,8 @@ SDMTPClass mySD[] = {
 //LittleFS classes
 //=============================================================================
 // Setup a callback class for Littlefs storages..
-	#include <LFS_MTP_Callback.h>  //callback for LittleFS format
-	LittleFSMTPCB lfsmtpcb;
+	//#include <LFS_MTP_Callback.h>  //callback for LittleFS format
+	//LittleFSMTPCB lfsmtpcb;
 #endif
 
 
@@ -308,6 +310,9 @@ void setup()
   DBGSerial.print(CrashReport);
   DBGSerial.println("\n" __FILE__ " " __DATE__ " " __TIME__);
   delay(3000);
+  
+  //This is mandatory to begin the mtpd session.
+  mtpd.begin();
   
   storage_configure();
   
