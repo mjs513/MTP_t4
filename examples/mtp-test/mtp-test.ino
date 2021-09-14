@@ -304,7 +304,7 @@ void setup()
 #else
   //while(!DBGSerial.available()); // comment if you do not want to wait for terminal (otherwise press any key to continue)
   while (!Serial && !DBGSerial.available() && millis() < 5000) 
-  myusb.Task(); // or third option to wait up to 5 seconds and then continue
+  //myusb.Task(); // or third option to wait up to 5 seconds and then continue
 #endif
 
   DBGSerial.print(CrashReport);
