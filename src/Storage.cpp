@@ -29,6 +29,7 @@
 #include "usb_serial.h"
 
 #include "Storage.h"
+#include "MTP.h"
 
 #define DEBUG 0
 
@@ -42,16 +43,16 @@
 
 #if USE_DBG_MACROS==1
   static void dbgPrint(uint16_t line) {
-    Serial.print(F("DBG_FAIL: "));
-    Serial.print(F(DBG_FILE));
-    Serial.write('.');
-    Serial.println(line);
+    MTPD::PrintStream()->print(F("DBG_FAIL: "));
+    MTPD::PrintStream()->print(F(DBG_FILE));
+    MTPD::PrintStream()->write('.');
+    MTPD::PrintStream()->println(line);
   }
 
-  #define DBG_PRINT_IF(b) if (b) {Serial.print(F(__FILE__));\
-                          Serial.println(__LINE__);}
-  #define DBG_HALT_IF(b) if (b) { Serial.print(F("DBG_HALT "));\
-                        Serial.print(F(__FILE__)); Serial.println(__LINE__);\
+  #define DBG_PRINT_IF(b) if (b) {MTPD::PrintStream()->print(F(__FILE__));\
+                          MTPD::PrintStream()->println(__LINE__);}
+  #define DBG_HALT_IF(b) if (b) { MTPD::PrintStream()->print(F("DBG_HALT "));\
+                        MTPD::PrintStream()->print(F(__FILE__)); MTPD::PrintStream()->println(__LINE__);\
                         while (true) {}}
   #define DBG_FAIL_MACRO dbgPrint(__LINE__);
 #else  // USE_DBG_MACROS
@@ -153,7 +154,7 @@ void mtp_lock_storage(bool lock) {}
   { if(sd_isOpen(index_)) return; // only once
     mtp_lock_storage(true);
     index_=sd_open(index_file_storage_,indexFile, FILE_WRITE_BEGIN);
-    if(!index_) Serial.println("cannot open Index file"); 
+    if(!index_) MTPD::PrintStream()->println("cannot open Index file"); 
     mtp_lock_storage(false);
     user_index_file_ = false; // opened up default file so make sure off
   }
@@ -294,11 +295,11 @@ void mtp_lock_storage(bool lock) {}
         sd_getName(child_,r.name, MAX_FILENAME_LEN);
 #ifdef MTP_SUPPORT_MODIFY_DATE
         /*bool success = */child_.getModifyDateTime(&r.modifyDate, &r.modifyTime);
-        //Serial.printf("~~~ScanDir Mod: %s %u %x %x\n", r.name, success, r.modifyDate, r.modifyTime);
+        //MTPD::PrintStream()->printf("~~~ScanDir Mod: %s %u %x %x\n", r.name, success, r.modifyDate, r.modifyTime);
 #endif
 #ifdef MTP_SUPPORT_CREATE_DATE
         /*success = */child_.getCreateDateTime(&r.createDate, &r.createTime);
-        //Serial.printf("~~~ScanDir Cre: %s %u %x %x\n", r.name, success, r.createDate, r.createTime);
+        //MTPD::PrintStream()->printf("~~~ScanDir Cre: %s %u %x %x\n", r.name, success, r.createDate, r.createTime);
 #endif
         sibling = AppendIndexRecord(r);
         child_.close();
@@ -423,7 +424,7 @@ bool MTPStorage_SD::updateDateTimeStamps (uint32_t handle, uint16_t dateCreated,
     Record r = ReadIndexRecord(handle);
   OpenFileByIndex(handle, FILE_WRITE);
   if(!sd_isOpen(file_)) {
-    Serial.printf("MTPStorage_SD::updateDateTimeStamps failed to open file\n");
+    MTPD::PrintStream()->printf("MTPStorage_SD::updateDateTimeStamps failed to open file\n");
     return false;
   }
   mtp_lock_storage(true);
@@ -556,7 +557,7 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
       // lets check to see if we opened the file or not...
       if(!sd_isOpen(file_))
       {
-        Serial.printf("MTPStorage_SD::Create %s failed to create file\n", filename);
+        MTPD::PrintStream()->printf("MTPStorage_SD::Create %s failed to create file\n", filename);
         DeleteObject(ret);  // note this will mark that new item as deleted...
         ret = 0xFFFFFFFFUL; // return an error code...
       } else {
@@ -569,11 +570,11 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
       }
     }
     #if DEBUG>1
-    Serial.print("Create "); 
-      Serial.print(ret); Serial.print(" ");
-      Serial.print(store); Serial.print(" "); 
-      Serial.print(parent); Serial.print(" "); 
-      Serial.println(filename);
+    MTPD::PrintStream()->print("Create "); 
+      MTPD::PrintStream()->print(ret); MTPD::PrintStream()->print(" ");
+      MTPD::PrintStream()->print(store); MTPD::PrintStream()->print(" "); 
+      MTPD::PrintStream()->print(parent); MTPD::PrintStream()->print(" "); 
+      MTPD::PrintStream()->println(filename);
     #endif
     return ret;
   }
@@ -606,7 +607,7 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
     char temp[MAX_FILENAME_LEN];
 
     uint16_t store = ConstructFilename(handle, oldName, MAX_FILENAME_LEN);
-    Serial.println(oldName);
+    MTPD::PrintStream()->println(oldName);
 
     Record p1 = ReadIndexRecord(handle);
     strlcpy(temp,p1.name,MAX_FILENAME_LEN);
@@ -614,7 +615,7 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
 
     WriteIndexRecord(handle, p1);
     ConstructFilename(handle, newName, MAX_FILENAME_LEN);
-    Serial.println(newName);
+    MTPD::PrintStream()->println(newName);
 
     if (sd_rename(store,oldName,newName)) return true;
 
@@ -627,15 +628,15 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
   void MTPStorage_SD::dumpIndexList(void)
   { for(uint32_t ii=0; ii<index_entries_; ii++)
     { Record p = ReadIndexRecord(ii);
-      Serial.printf("%d: %d %d %d %d %d %s\n",ii, p.store, p.isdir,p.parent,p.sibling,p.child,p.name);
+      MTPD::PrintStream()->printf("%d: %d %d %d %d %d %s\n",ii, p.store, p.isdir,p.parent,p.sibling,p.child,p.name);
     }
   }
 
   void MTPStorage_SD::printRecord(int h, Record *p) 
-  { Serial.printf("%d: %d %d %d %d %d\n",h, p->store,p->isdir,p->parent,p->sibling,p->child); }
+  { MTPD::PrintStream()->printf("%d: %d %d %d %d %d\n",h, p->store,p->isdir,p->parent,p->sibling,p->child); }
   
   void MTPStorage_SD::printRecordIncludeName(int h, Record *p) 
-  { Serial.printf("%d: %d %d %d %d %d %d %s\n",h, p->store,p->isdir,p->scanned,p->parent,p->sibling,p->child,p->name); }
+  { MTPD::PrintStream()->printf("%d: %d %d %d %d %d %d %s\n",h, p->store,p->isdir,p->scanned,p->parent,p->sibling,p->child,p->name); }
   
 /*
  * //index list management for moving object around
@@ -665,7 +666,7 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
   bool MTPStorage_SD::move(uint32_t handle, uint32_t newStore, uint32_t newParent ) 
   { 
     #if DEBUG>1
-      Serial.printf("%d -> %d %d\n",handle,newStorage,newParent);
+      MTPD::PrintStream()->printf("%d -> %d %d\n",handle,newStorage,newParent);
     #endif
     if(newParent==0xFFFFFFFFUL) newParent=newStore; //storage runs from 1, while record.store runs from 0
 
@@ -688,7 +689,7 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
     ConstructFilename(handle, oldName, MAX_FILENAME_LEN);
 
     #if DEBUG>1
-      Serial.print(p1.store); Serial.print(": "); Serial.println(oldName);
+      MTPD::PrintStream()->print(p1.store); MTPD::PrintStream()->print(": "); MTPD::PrintStream()->println(oldName);
       dumpIndexList();
     #endif
 
@@ -729,7 +730,7 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
       ConstructFilename(handle, newName, MAX_FILENAME_LEN);
 
       #if DEBUG>1
-        Serial.print(p1.store); Serial.print(": ");Serial.println(newName);
+        MTPD::PrintStream()->print(p1.store); MTPD::PrintStream()->print(": ");MTPD::PrintStream()->println(newName);
         dumpIndexList();
       #endif
 
@@ -797,7 +798,7 @@ bool MTPStorage_SD::CopyFiles(uint32_t handle, uint32_t store, uint32_t newHandl
 { // assume handle and newHandle point to existing directories
   if(newHandle==0xFFFFFFFFUL) newHandle=store;
   #if DEBUG>1
-    Serial.printf("%d -> %d\n",handle,newHandle);
+    MTPD::PrintStream()->printf("%d -> %d\n",handle,newHandle);
   #endif
 
   Record p1=ReadIndexRecord(handle);
@@ -835,6 +836,30 @@ bool MTPStorage_SD::CopyFiles(uint32_t handle, uint32_t store, uint32_t newHandl
   return true;
 }
 /************************************** mSD_Base *******************************/
+uint32_t mSD_Base::sd_addFilesystem(FS &fs, const char *name, MTPStorageInterfaceCB *callback, uint32_t user_token) {
+  if (fsCount < MTPD_MAX_FILESYSTEMS) {
+    sd_name[fsCount] = name;
+    sdx[fsCount] = &fs;
+    callbacks[fsCount] = callback;
+    user_tokens[fsCount] = user_token;
+    MTPD::PrintStream()->printf("sd_addFilesystem: %d %x %s %x %x\n", fsCount, (uint32_t)&fs, name, (uint32_t)callback, user_token);
+    return fsCount++;
+  }
+  return 0xFFFFFFFFUL;  // no room left
+}
+
+bool mSD_Base::sd_removeFilesystem(uint32_t store)
+{
+  if ((store < (uint32_t)fsCount) && (sd_name[store])) {
+    sd_name[store] = nullptr;
+    sdx[store] = nullptr;
+    return true;
+  }
+  return false;;
+
+}
+
+
 bool mSD_Base::sd_copy(uint32_t store0, char *oldfilename, uint32_t store1, char *newfilename)
 {
   const int nbuf = 2048;
@@ -842,8 +867,8 @@ bool mSD_Base::sd_copy(uint32_t store0, char *oldfilename, uint32_t store1, char
   int nd=-1;
 
   #if DEBUG>1
-    Serial.print("From "); Serial.print(store0); Serial.print(": ");Serial.println(oldfilename);
-    Serial.print("To   "); Serial.print(store1); Serial.print(": ");Serial.println(newfilename);
+    MTPD::PrintStream()->print("From "); MTPD::PrintStream()->print(store0); MTPD::PrintStream()->print(": ");MTPD::PrintStream()->println(oldfilename);
+    MTPD::PrintStream()->print("To   "); MTPD::PrintStream()->print(store1); MTPD::PrintStream()->print(": ");MTPD::PrintStream()->println(newfilename);
   #endif
 
   File f1 = sd_open(store0,oldfilename,FILE_READ); if(!f1) {DBG_FAIL_MACRO; return false;}
@@ -907,7 +932,7 @@ bool mSD_Base::sd_moveDir(uint32_t store0, char *oldfilename, uint32_t store1, c
 uint32_t MTPStorage_SD::MapFileNameToIndex(uint32_t storage, const char *pathname, bool addLastNode, bool *node_added) 
 {
   const char *path_parser = pathname;
-  Serial.printf("MTPStorage_SD::MapFileNameToIndex %u %s add:%d\n", storage, pathname, addLastNode);
+  MTPD::PrintStream()->printf("MTPStorage_SD::MapFileNameToIndex %u %s add:%d\n", storage, pathname, addLastNode);
   // We will only walk as far as we have enumerated 
   if (node_added) *node_added = false;
   if (!index_generated || (path_parser == nullptr) || (*path_parser == '\0')) return 0xFFFFFFFFUL;  // no index 
@@ -927,7 +952,7 @@ uint32_t MTPStorage_SD::MapFileNameToIndex(uint32_t storage, const char *pathnam
     *psz = '\0'; // terminate the string. 
 
     // Now lets see if we can find this item in the record list. 
-    Serial.printf("Looking for: %s\n", filename);
+    MTPD::PrintStream()->printf("Looking for: %s\n", filename);
     index = record.child;
     while(index) {
       record = ReadIndexRecord(index);
@@ -939,13 +964,13 @@ uint32_t MTPStorage_SD::MapFileNameToIndex(uint32_t storage, const char *pathnam
     if (index) {
       // found a match. return it.
       if (*path_parser == '\0')  {
-        Serial.printf("Found Node: %d\n", index);
+        MTPD::PrintStream()->printf("Found Node: %d\n", index);
         return index;
       }
 
     } else {
       // item not found
-      Serial.println("Node Not found");
+      MTPD::PrintStream()->println("Node Not found");
 
       if ( (*path_parser != '\0') || !addLastNode) return 0xFFFFFFFFUL;  // not found nor added
 
@@ -984,7 +1009,7 @@ uint32_t MTPStorage_SD::MapFileNameToIndex(uint32_t storage, const char *pathnam
       index = record.child = AppendIndexRecord(r);
       WriteIndexRecord(parent, record);
 
-      Serial.printf("New node created: %d\n", index);
+      MTPD::PrintStream()->printf("New node created: %d\n", index);
       record = ReadIndexRecord(index);
       printRecordIncludeName(index, &record);
       if (node_added) *node_added = true;

@@ -42,10 +42,11 @@
 #include "usb_names.h"
 extern struct usb_string_descriptor_struct usb_string_serial_number; 
 
+Stream *MTPD::printStream_ = &Serial;
+
 #define DEBUG 2
-#define DBGSerial Serial
 #if DEBUG>0
-  #define printf(...) DBGSerial.printf(__VA_ARGS__)
+  #define printf(...) printStream_->printf(__VA_ARGS__)
 #else
   #define printf(...) 
 #endif
@@ -364,6 +365,13 @@ const uint16_t supported_events[] =
 */
   int MTPD::begin() { 
     setSyncProvider(getTeensyTime);
+
+    // lets set up to check for MTP messages and tell
+    // other side we are busy...  Maybe should be function:
+    g_pmtpd_interval = this;
+    printf("*** Start Interval Timer ***\n");
+    g_intervaltimer.begin(&_interval_timer_handler, 50000); // try maybe 20 times per second...
+
     return usb_init_events(); 
   }
 
@@ -1814,6 +1822,17 @@ const uint16_t supported_events[] =
 
             switch (op)
             {
+
+            case MTP_OPERATION_GET_DEVICE_INFO: // GetDescription 0x1001
+              TRANSMIT(WriteDescriptor());
+              break;
+            case MTP_OPERATION_OPEN_SESSION:  //open session 0x1002
+              openSession(p1);
+              break;
+            case MTP_OPERATION_GET_DEVICE_PROP_DESC: // 1014
+                TRANSMIT(GetDevicePropDesc(p1));
+                break;
+
               default:
                   return_code = MTP_RESPONSE_DEVICE_BUSY;  // operation not supported
                   break;
@@ -1874,8 +1893,13 @@ const uint16_t supported_events[] =
 
 
     void MTPD::loop(void)
-    { if(usb_mtp_available())
-
+    {
+      if (g_pmtpd_interval) {
+        g_pmtpd_interval = nullptr; // clear out timer.
+        g_intervaltimer.end(); // try maybe 20 times per second...
+        printf("*** end Interval Timer ***\n");
+      }
+      if(usb_mtp_available())
       { if(fetch_packet(rx_data_buffer))
         { printContainer(); // to switch on set debug to 1 at beginning of file
 

@@ -55,22 +55,58 @@ static const uint32_t file_system_size = 1024 * 512;
     extern "C" uint8_t external_psram_size;
 #endif
 
+// Quick and Dirty memory Stream...
+class RAMStream : public Stream {
+  public:
+  // overrides for Stream
+  virtual int available() {return (tail_ - head_); }
+  virtual int read() {return (tail_ != head_)? buffer_[head_++] : -1;  }
+  virtual int peek() {return (tail_ != head_)? buffer_[head_] : -1;  }
+
+  // overrides for Print
+  virtual size_t write(uint8_t b) {
+    if (tail_ < sizeof(buffer_)) {
+      buffer_[tail_++] = b;
+      return 1;
+    }
+    return 0;
+  }
+
+  enum {BUFFER_SIZE=32768};
+  uint8_t buffer_[BUFFER_SIZE];
+  uint32_t head_ = 0;
+  uint32_t tail_ = 0;
+};
+
 void setup()
 {
+  // setup to do quick and dirty ram stream until Serial or like is up...
+  RAMStream rstream;
+  // start up MTPD early which will if asked tell the MTP
+  // host that we are busy, until we have finished setting
+  // up...
+  DBGSerial.begin(2000000);
+  mtpd.PrintStream(&rstream);   // Setup which stream to use...
+
+  mtpd.begin();
 
   // Open serial communications and wait for port to open:
-  DBGSerial.begin(2000000);
   while (!DBGSerial && millis() < 5000) {
     // wait for serial port to connect.
   }
+  
+  // set to real stream
+  mtpd.PrintStream(&DBGSerial);   // Setup which stream to use...
+  int ch;
+  while ((ch = rstream.read()) != -1) DBGSerial.write(ch);
+
   if (CrashReport) {
     DBGSerial.print(CrashReport);
   }
   DBGSerial.println("\n" __FILE__ " " __DATE__ " " __TIME__);
 
-  DBGSerial.println("Initializing MTP Storage list ...");
+  DBGSerial.printf("%u Initializing MTP Storage list ...", millis());
 
-  mtpd.begin();
   DBGSerial.printf("Date: %u/%u/%u %u:%u:%u\n", day(), month(), year(),
                    hour(), minute(), second());
 
@@ -98,7 +134,7 @@ void setup()
     DBGSerial.printf("Set Storage Index drive to %u\n", istore);
   }
 
-  DBGSerial.println("SD initialized.");
+  DBGSerial.printf("%u SD initialized.\n", millis());
   menu();
 
 }
