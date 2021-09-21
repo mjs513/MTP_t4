@@ -29,7 +29,8 @@
 #define USE_LFS_FRAM 0
 #endif
 #define USE_MSC 3    // set to > 0 experiment with MTP (USBHost.t36 + mscFS)
-
+#define USE_SW_PU	0	//set to 1 if SPI devices does not have PUs,
+						// https://www.pjrc.com/better-spi-bus-design-in-3-steps/
 
 extern "C" {
   extern uint8_t external_psram_size;
@@ -235,7 +236,7 @@ void storage_configure()
 #if USE_LFS_SPI==1
   for(int ii=0; ii<nfs_spi;ii++)
   {
-    pinMode(lfs_cs[ii],OUTPUT); digitalWriteFast(lfs_cs[ii],HIGH);
+    if(USE_SW_PU == 1) pinMode(lfs_cs[ii],OUTPUT); digitalWriteFast(lfs_cs[ii],HIGH);
     if(!spifs[ii].begin(lfs_cs[ii], SPI))
     { DBGSerial.printf("SPIFlash Storage %d %d %s failed or missing",ii,lfs_cs[ii],lfs_spi_str[ii]); DBGSerial.println();
     }
@@ -250,7 +251,7 @@ void storage_configure()
 #endif
 #if USE_LFS_NAND == 1
   for(int ii=0; ii<nspi_nsd;ii++) {
-    pinMode(nspi_cs[ii],OUTPUT); digitalWriteFast(nspi_cs[ii],HIGH);
+    if(USE_SW_PU == 1) pinMode(nspi_cs[ii],OUTPUT); digitalWriteFast(nspi_cs[ii],HIGH);
     if(!nspifs[ii].begin(nspi_cs[ii], SPI)) 
     { DBGSerial.printf("SPIFlash NAND Storage %d %d %s failed or missing",ii,nspi_cs[ii],nspi_str[ii]); DBGSerial.println();
     }

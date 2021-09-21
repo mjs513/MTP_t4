@@ -14,7 +14,7 @@
 // LittleFS supports creating file systems (FS) in multiple memory types.  Depending on the
 // memory type you want to use you would uncomment one of the following constructors
 
-LittleFS_SPIFlash myfs;  // Used to create FS on QSPI NAND flash chips located on the bottom of the T4.1 such as the W25N01G. for the full list of supported NAND flash see  https://github.com/PaulStoffregen/LittleFS#nand-flash
+LittleFS_SPIFlash myfs;  // Used to create FS on SPI flash chips
 
 LittleFSMTPCB lfsmtpcb;
 

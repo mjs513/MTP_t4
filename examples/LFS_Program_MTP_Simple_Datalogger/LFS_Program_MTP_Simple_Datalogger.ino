@@ -11,10 +11,7 @@
 #include <LFS_MTP_Callback.h>
 
 
-// LittleFS supports creating file systems (FS) in multiple memory types.  Depending on the
-// memory type you want to use you would uncomment one of the following constructors
-
-LittleFS_Program myfs;  // Used to create FS on QSPI NAND flash chips located on the bottom of the T4.1 such as the W25N01G. for the full list of supported NAND flash see  https://github.com/PaulStoffregen/LittleFS#nand-flash
+LittleFS_Program myfs;  // Used to create FS using Program memory, i.e., on chip flash
 
 LittleFSMTPCB lfsmtpcb;
 
@@ -24,7 +21,7 @@ int record_count = 0;
 bool write_data = false;
 uint32_t diskSize;
 
-static const uint32_t file_system_size = 1024 * 512;
+static const uint32_t file_system_size = 1024 * 1024 * 1;
 
 // Add in MTPD objects
 MTPStorage_SD storage;
@@ -43,7 +40,7 @@ void setup()
   Serial.print("Initializing LittleFS ...");
 
   // see if the Flash is present and can be initialized:
-  // lets check to see if the T4 is setup for security first
+  // If using a Locked Teensy 4.0 there is a 960K block limit.
   #if ARDUINO_TEENSY40
     if ((IOMUXC_GPR_GPR11 & 0x100) == 0x100) {
       //if security is active max disk size is 960x1024
