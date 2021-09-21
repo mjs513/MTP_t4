@@ -7,25 +7,25 @@
   This example code is in the public domain.
 */
 #include <LittleFS.h>
-#include <MTP.h>
-#include <LFS_MTP_Callback.h>
+#include <SdFat.h>
 
+LittleFS_Program myfs;
 
-LittleFS_Program myfs;  // Used to create FS using Program memory, i.e., on chip flash
-
-LittleFSMTPCB lfsmtpcb;
+// NOTE: This option is only available on the Teensy 4.0, Teensy 4.1 and Teensy Micromod boards.
+// With the additonal option for security on the T4 the maximum flash available for a
+// program disk with LittleFS is 960 blocks of 1024 bytes
+#define PROG_FLASH_SIZE 1024 * 1024 * 1 // Specify size to use of onboard Teensy Program Flash chip
+// This creates a LittleFS drive in Teensy PCB FLash.
 
 File dataFile;  // Specifes that dataFile is of File type
 
 int record_count = 0;
 bool write_data = false;
 uint32_t diskSize;
-
-static const uint32_t file_system_size = 1024 * 1024 * 1;
-
-// Add in MTPD objects
-MTPStorage_SD storage;
-MTPD       mtpd(&storage);
+time_t getTeensy3Time()
+{
+  return Teensy3Clock.get();
+}
 
 void setup()
 {
@@ -37,38 +37,40 @@ void setup()
   }
   Serial.println("\n" __FILE__ " " __DATE__ " " __TIME__);
 
-  Serial.print("Initializing LittleFS ...");
+  Serial.println("Initializing LittleFS ...");
+  setSyncProvider(getTeensy3Time);
+  delay(100);
+  if (timeStatus()!= timeSet) {
+    Serial.println("Unable to sync with the RTC");
+  } else {
+    Serial.println("RTC has set the system time");
+  }
 
+  
   // see if the Flash is present and can be initialized:
-  // If using a Locked Teensy 4.0 there is a 960K block limit.
-  #if ARDUINO_TEENSY40
-    if ((IOMUXC_GPR_GPR11 & 0x100) == 0x100) {
-      //if security is active max disk size is 960x1024
-      Serial.println("SECURITY ENABLED");
-      if(file_system_size > 960*1024){
-        diskSize = 960*1024;
-        Serial.printf("PROGRAM disk defaulted to %u bytes\n", diskSize);  
-      } else {
-        diskSize = file_system_size;
-        Serial.printf("PROGRAM disk using %u bytes\n", diskSize);
-      }
+  // lets check to see if the T4 is setup for security first
+#if ARDUINO_TEENSY40
+  if ((IOMUXC_GPR_GPR11 & 0x100) == 0x100) {
+    //if security is active max disk size is 960x1024
+    if (PROG_FLASH_SIZE > 960 * 1024) {
+      diskSize = 960 * 1024;
+      Serial.printf("Security Enables defaulted to %u bytes\n", diskSize);
+    } else {
+      diskSize = PROG_FLASH_SIZE;
+      Serial.printf("Security Not Enabled using %u bytes\n", diskSize);
     }
-  #else
-    diskSize = file_system_size;
-  #endif
+  }
+#else
+  diskSize = PROG_FLASH_SIZE;
+#endif
 
   // checks that the LittFS program has started with the disk size specified
-  if (!myfs.begin(file_system_size)) {
+  if (!myfs.begin(diskSize)) {
     Serial.printf("Error starting %s\n", "PROGRAM FLASH DISK");
     while (1) {
       // Error, so don't do anything more - stay stuck here
     }
   }
-
-  mtpd.begin();
-  lfsmtpcb.set_formatLevel(true);  //sets formating to lowLevelFormat
-  storage.addFilesystem(myfs, "Program", &lfsmtpcb, (uint32_t)(LittleFS*)&myfs);
-
   Serial.println("LittleFS initialized.");
 
   menu();
@@ -94,7 +96,6 @@ void loop()
         }
         break;
       case 'x': stopLogging(); break;
-
       case 'd': dumpLog(); break;
       case '\r':
       case '\n':
@@ -102,7 +103,6 @@ void loop()
     }
     while (Serial.read() != -1) ; // remove rest of characters.
   }
-  else mtpd.loop();
 
   if (write_data) logData();
 }
@@ -141,7 +141,6 @@ void stopLogging()
   // Closes the data file.
   dataFile.close();
   Serial.printf("Records written = %d\n", record_count);
-  mtpd.send_DeviceResetEvent();
 }
 
 
@@ -189,9 +188,8 @@ void listFiles()
 
 void eraseFiles()
 {
-  myfs.quickFormat();  // performs a quick format of the created di
+  myfs.lowLevelFormat();  // performs a quick format of the created di
   Serial.println("\nFiles erased !");
-  mtpd.send_DeviceResetEvent();
 }
 
 void printDirectory(FS &fs) {
@@ -217,6 +215,12 @@ void printDirectory(File dir, int numSpaces) {
       printSpaces(36 - numSpaces - strlen(entry.name()));
       Serial.print("  ");
       Serial.println(entry.size(), DEC);
+      uint16_t c_date; uint16_t c_time;
+      entry.getCreateDateTime(&c_date, &c_time);
+      Serial.printf("    Created: %d-%02d-%02d %02d:%02d:%02d\n", FS_YEAR(c_date), FS_MONTH(c_date), FS_DAY(c_date), FS_HOUR(c_time), FS_MINUTE(c_time), FS_SECOND(c_time));
+      entry.getModifyDateTime(&c_date, &c_time);
+      Serial.printf("    LastWrite: %d-%02d-%02d %02d:%02d:%02d\n", FS_YEAR(c_date), FS_MONTH(c_date), FS_DAY(c_date), FS_HOUR(c_time), FS_MINUTE(c_time), FS_SECOND(c_time));
+
     }
     entry.close();
   }
