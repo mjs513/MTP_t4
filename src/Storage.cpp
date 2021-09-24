@@ -550,6 +550,23 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
       mtp_lock_storage(true);
       sd_mkdir(store,filename);
       mtp_lock_storage(false);
+#if defined (MTP_SUPPORT_MODIFY_DATE) || defined(MTP_SUPPORT_CREATE_DATE)    
+      OpenFileByIndex(ret, FILE_READ);
+      if(!sd_isOpen(file_))
+        MTPD::PrintStream()->printf("MTPStorage_SD::Create %s failed to open folder\n", filename);
+      else 
+      {
+#ifdef MTP_SUPPORT_MODIFY_DATE
+        file_.getModifyDateTime(&r.modifyDate, &r.modifyTime);
+#endif
+#ifdef MTP_SUPPORT_CREATE_DATE
+        file_.getCreateDateTime(&r.createDate, &r.createTime);
+#endif
+        // does not do any good if we don't save the data!
+        WriteIndexRecord(ret, r);
+      }
+#endif
+
     } 
     else 
     {
@@ -561,11 +578,15 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
         DeleteObject(ret);  // note this will mark that new item as deleted...
         ret = 0xFFFFFFFFUL; // return an error code...
       } else {
+#if defined (MTP_SUPPORT_MODIFY_DATE) || defined(MTP_SUPPORT_CREATE_DATE)    
 #ifdef MTP_SUPPORT_MODIFY_DATE
         file_.getModifyDateTime(&r.modifyDate, &r.modifyTime);
 #endif
 #ifdef MTP_SUPPORT_CREATE_DATE
         file_.getCreateDateTime(&r.createDate, &r.createTime);
+#endif
+        // does not do any good if we don't save the data!
+        WriteIndexRecord(ret, r);
 #endif
       }
     }
@@ -574,6 +595,13 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
       MTPD::PrintStream()->print(ret); MTPD::PrintStream()->print(" ");
       MTPD::PrintStream()->print(store); MTPD::PrintStream()->print(" "); 
       MTPD::PrintStream()->print(parent); MTPD::PrintStream()->print(" "); 
+      #ifdef MTP_SUPPORT_CREATE_DATE
+      MTPD::PrintStream()->print(folder); MTPD::PrintStream()->print(" "); 
+      #endif
+      MTPD::PrintStream()->print(r.createDate); MTPD::PrintStream()->print(" "); 
+      #ifdef MTP_SUPPORT_MODIFY_DATE
+      MTPD::PrintStream()->print(r.modifyDate); MTPD::PrintStream()->print(" "); 
+      #endif
       MTPD::PrintStream()->println(filename);
     #endif
     return ret;
@@ -666,7 +694,7 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
   bool MTPStorage_SD::move(uint32_t handle, uint32_t newStore, uint32_t newParent ) 
   { 
     #if DEBUG>1
-      MTPD::PrintStream()->printf("%d -> %d %d\n",handle,newStorage,newParent);
+      MTPD::PrintStream()->printf("%d -> %d %d\n",handle,newStore,newParent);
     #endif
     if(newParent==0xFFFFFFFFUL) newParent=newStore; //storage runs from 1, while record.store runs from 0
 
