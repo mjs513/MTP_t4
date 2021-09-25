@@ -143,7 +143,7 @@ private:
   uint16_t read16() ;
   uint32_t read32() ;
   int readstring(char* buffer) ;
-  int readDateTimeString(uint16_t *pdate, uint16_t *ptime);
+  int readDateTimeString(uint32_t *pdt);
 
 //  void read_until_short_packet() ;
 
@@ -206,10 +206,8 @@ public:
 #endif
   // Support for SendObject, holding parameters from SendObjectInfo.
   int     object_id_;
-  uint16_t dateCreated_;
-  uint16_t timeCreated_;
-  uint16_t dateModified_;
-  uint16_t timeModified_;
+  uint32_t dtCreated_;
+  uint32_t dtModified_;
 
 };
 

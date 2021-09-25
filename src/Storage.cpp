@@ -258,12 +258,10 @@ void mtp_lock_storage(bool lock) {}
       r.isdir = true;
       r.scanned = false;
 #ifdef MTP_SUPPORT_MODIFY_DATE
-      r.modifyDate = 0;
-      r.modifyTime = 0;
+      r.dtModify = 0;
 #endif
 #ifdef MTP_SUPPORT_CREATE_DATE
-      r.createDate = 0;
-      r.createTime = 0;
+      r.dtCreate = 0;
 #endif
       strcpy(r.name, "/");
       AppendIndexRecord(r);
@@ -293,13 +291,15 @@ void mtp_lock_storage(bool lock) {}
         r.child = r.isdir ? 0 : (uint32_t) child_.size();
         r.scanned = false;
         sd_getName(child_,r.name, MAX_FILENAME_LEN);
+
+#if defined(MTP_SUPPORT_MODIFY_DATE) || defined(MTP_SUPPORT_CREATE_DATE)
+        DateTimeFields dtf;
 #ifdef MTP_SUPPORT_MODIFY_DATE
-        /*bool success = */child_.getModifyDateTime(&r.modifyDate, &r.modifyTime);
-        //MTPD::PrintStream()->printf("~~~ScanDir Mod: %s %u %x %x\n", r.name, success, r.modifyDate, r.modifyTime);
+         r.dtModify = child_.getModifyTime(dtf) ? makeTime(dtf) : 0;
 #endif
 #ifdef MTP_SUPPORT_CREATE_DATE
-        /*success = */child_.getCreateDateTime(&r.createDate, &r.createTime);
-        //MTPD::PrintStream()->printf("~~~ScanDir Cre: %s %u %x %x\n", r.name, success, r.createDate, r.createTime);
+         r.dtModify = child_.getCreateTime(dtf) ? makeTime(dtf) : 0;
+#endif
 #endif
         sibling = AppendIndexRecord(r);
         child_.close();
@@ -371,22 +371,20 @@ void mtp_lock_storage(bool lock) {}
   }
 
 #ifdef MTP_SUPPORT_MODIFY_DATE
-  bool MTPStorage_SD::getModifyDateTime(uint32_t handle, uint16_t *pdate, uint16_t *ptime)
+  bool MTPStorage_SD::getModifyTime(uint32_t handle, uint32_t &dt)
   {
     Record r = ReadIndexRecord(handle);
-    *pdate = r.modifyDate;    
-    *ptime = r.modifyTime; 
-    return (r.modifyDate || r.modifyTime)? true : false;   
+    dt = r.dtModify;
+    return (r.dtModify)? true : false;   
   }
 #endif
 
 #ifdef MTP_SUPPORT_CREATE_DATE
-  bool MTPStorage_SD::getCreateDateTime(uint32_t handle, uint16_t *pdate, uint16_t *ptime)
+  bool MTPStorage_SD::getCreateTime(uint32_t handle, uint32_t &dt)
   {
     Record r = ReadIndexRecord(handle);
-    *pdate = r.createDate;    
-    *ptime = r.createTime; 
-    return (r.createDate || r.createTime)? true : false;   
+    dt = r.dtCreate;
+    return (r.dtCreate)? true : false;   
   }
 #endif
 
@@ -418,10 +416,11 @@ void mtp_lock_storage(bool lock) {}
       return 2*(fatTime & 0X1F);
     }
 
-bool MTPStorage_SD::updateDateTimeStamps (uint32_t handle, uint16_t dateCreated, uint16_t timeCreated, uint16_t dateModified, uint16_t timeModified) 
+bool MTPStorage_SD::updateDateTimeStamps (uint32_t handle, uint32_t dtCreated, uint32_t dtModified) 
 {
 #if defined(MTP_SUPPORT_MODIFY_DATE) || defined(MTP_SUPPORT_CREATE_DATE)
     Record r = ReadIndexRecord(handle);
+    DateTimeFields dtf; 
   OpenFileByIndex(handle, FILE_WRITE);
   if(!sd_isOpen(file_)) {
     MTPD::PrintStream()->printf("MTPStorage_SD::updateDateTimeStamps failed to open file\n");
@@ -430,17 +429,14 @@ bool MTPStorage_SD::updateDateTimeStamps (uint32_t handle, uint16_t dateCreated,
   mtp_lock_storage(true);
   
   #if defined(MTP_SUPPORT_MODIFY_DATE)
-  r.modifyDate = dateModified;    
-  r.modifyTime = timeModified; 
-  file_.timestamp(T_WRITE, MTPFS_YEAR(dateModified), MTPFS_MONTH(dateModified), MTPFS_DAY(dateModified), 
-        MTPFS_HOUR(timeModified), MTPFS_MINUTE(timeModified), MTPFS_SECOND(timeModified));
-
+  r.dtModify = dtModified;
+  breakTime(dtModified, dtf);
+  file_.setModifyTime(dtf);    
   #endif
   #if defined(MTP_SUPPORT_CREATE_DATE)
-  r.createDate = dateCreated;    
-  r.createTime = timeCreated; 
-  file_.timestamp(T_CREATE, MTPFS_YEAR(dateCreated), MTPFS_MONTH(dateCreated), MTPFS_DAY(dateCreated), 
-        MTPFS_HOUR(timeCreated), MTPFS_MINUTE(timeCreated), MTPFS_SECOND(timeCreated));
+  r.dtCreate = dtCreated;    
+  breakTime(dtCreated, dtf);
+  file_.setCreateTime(dtf);
   #endif
 
     WriteIndexRecord(handle, r);
@@ -535,12 +531,10 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
     r.scanned = 1;
     ret = p.child = AppendIndexRecord(r);
 #ifdef MTP_SUPPORT_MODIFY_DATE
-      r.modifyDate = 0;
-      r.modifyTime = 0;
+      r.dtModify = 0;
 #endif
 #ifdef MTP_SUPPORT_CREATE_DATE
-      r.createDate = 0;
-      r.createTime = 0;
+      r.dtCreate = 0;
 #endif
     WriteIndexRecord(parent, p);
     if (folder) 
@@ -556,11 +550,14 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
         MTPD::PrintStream()->printf("MTPStorage_SD::Create %s failed to open folder\n", filename);
       else 
       {
+#if defined(MTP_SUPPORT_MODIFY_DATE) || defined(MTP_SUPPORT_CREATE_DATE)
+        DateTimeFields dtf;
 #ifdef MTP_SUPPORT_MODIFY_DATE
-        file_.getModifyDateTime(&r.modifyDate, &r.modifyTime);
+         r.dtModify = file_.getModifyTime(dtf) ? makeTime(dtf) : 0;
 #endif
 #ifdef MTP_SUPPORT_CREATE_DATE
-        file_.getCreateDateTime(&r.createDate, &r.createTime);
+         r.dtModify = file_.getCreateTime(dtf) ? makeTime(dtf) : 0;
+#endif
 #endif
         // does not do any good if we don't save the data!
         WriteIndexRecord(ret, r);
@@ -578,12 +575,13 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
         DeleteObject(ret);  // note this will mark that new item as deleted...
         ret = 0xFFFFFFFFUL; // return an error code...
       } else {
-#if defined (MTP_SUPPORT_MODIFY_DATE) || defined(MTP_SUPPORT_CREATE_DATE)    
+#if defined(MTP_SUPPORT_MODIFY_DATE) || defined(MTP_SUPPORT_CREATE_DATE)
+        DateTimeFields dtf;
 #ifdef MTP_SUPPORT_MODIFY_DATE
-        file_.getModifyDateTime(&r.modifyDate, &r.modifyTime);
+         r.dtModify = file_.getModifyTime(dtf) ? makeTime(dtf) : 0;
 #endif
 #ifdef MTP_SUPPORT_CREATE_DATE
-        file_.getCreateDateTime(&r.createDate, &r.createTime);
+         r.dtModify = file_.getCreateTime(dtf) ? makeTime(dtf) : 0;
 #endif
         // does not do any good if we don't save the data!
         WriteIndexRecord(ret, r);
@@ -656,7 +654,7 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
   void MTPStorage_SD::dumpIndexList(void)
   { for(uint32_t ii=0; ii<index_entries_; ii++)
     { Record p = ReadIndexRecord(ii);
-      MTPD::PrintStream()->printf("%d: %d %d %d %d %d %s\n",ii, p.store, p.isdir,p.parent,p.sibling,p.child,p.name);
+      MTPD::PrintStream()->printf("%d: %d %d %d %d %d %u %u %s\n",ii, p.store, p.isdir,p.parent,p.sibling,p.child, p.dtCreate, p.dtModify, p.name);
     }
   }
 

@@ -558,25 +558,27 @@ const uint16_t supported_events[] =
     return len * 2 + 1;
   }
 
-  int MTPD::readDateTimeString(uint16_t *pdate, uint16_t *ptime) {
+  int MTPD::readDateTimeString(uint32_t *pdt) {
     char dtb[20]; // let it take care of the conversions.
     //                            01234567890123456
     // format of expected String: YYYYMMDDThhmmss.s
     int cb = readstring(dtb);
     if (cb > 1) {
+      DateTimeFields dtf;
       printf("Read DateTime string: %s\n", dtb);
       // Quick and dirty!
       uint16_t year = ((dtb[0]-'0') * 1000) + ((dtb[1]-'0') * 100) + ((dtb[2]-'0') * 10) + (dtb[3]-'0');
-      uint8_t month = ((dtb[4]-'0') * 10) + (dtb[5]-'0');
-      uint8_t day =   ((dtb[6]-'0') * 10) + (dtb[7]-'0');
-      *pdate = MTPFS_DATE(year, month, day);
-      printf(">> date: %x %u %u %u\n", *pdate, year, month, day);
-
-      uint8_t hour = ((dtb[9]-'0') * 10) + (dtb[10]-'0');
-      uint8_t min =  ((dtb[11]-'0') * 10) + (dtb[12]-'0');
-      uint8_t sec =  ((dtb[13]-'0') * 10) + (dtb[14]-'0');
-      *ptime = MTPFS_TIME(hour, min, sec);
-      printf(">> time: %x %u %u %u\n", *ptime, hour, min, sec);
+      dtf.year = year - 1900; // range 70-206
+      dtf.mon = ((dtb[4]-'0') * 10) + (dtb[5]-'0') - 1; // zero based not 1
+      dtf.mday =   ((dtb[6]-'0') * 10) + (dtb[7]-'0');
+      dtf.wday = 0; // hopefully not needed...
+//      *pdate = MTPFS_DATE(year, month, day);
+      dtf.hour = ((dtb[9]-'0') * 10) + (dtb[10]-'0');
+      dtf.min =  ((dtb[11]-'0') * 10) + (dtb[12]-'0');
+      dtf.sec =  ((dtb[13]-'0') * 10) + (dtb[14]-'0');
+      //*ptime = MTPFS_TIME(hour, min, sec);
+      *pdt = makeTime(dtf);
+      printf(">> date/Time: %x %u/%u/u %u:%u:%u\n", *pdt, dtf.mon, dtf.mday, year, dtf.hour, dtf.min, dtf.sec );
     }
     return cb;
   }
@@ -729,16 +731,17 @@ const uint16_t supported_events[] =
         case MTP_PROPERTY_DATE_CREATED:       //0xDC08:
             #ifdef MTP_SUPPORT_CREATE_DATE
               // String is like: YYYYMMDDThhmmss.s
-              uint16_t dateCreated;
-              uint16_t timeCreated;
+              uint32_t dt;
+              DateTimeFields dtf;
 
-              if (storage_->getCreateDateTime(p1, &dateCreated, &timeCreated)) {
+              if (storage_->getCreateTime(p1, dt)) {
+
                 // going to use the buffer name to output
+                breakTime(dt, dtf);
                 snprintf(name, MAX_FILENAME_LEN, "%04u%02u%02uT%02u%02u%02u", 
-                      MTPFS_YEAR(dateCreated), MTPFS_MONTH(dateCreated), MTPFS_DAY(dateCreated), 
-                      MTPFS_HOUR(timeCreated), MTPFS_MINUTE(timeCreated), MTPFS_SECOND(timeCreated));
+                      dtf.year + 1900, dtf.mon+1, dtf.mday, dtf.hour, dtf.min, dtf.sec);
                 writestring(name);
-                printf("Create (%x %x)Date/time:%s\n", dateCreated, timeCreated, name);
+                printf("Create (%x)Date/time:%s\n", dt, name);
                 break;
               }
             #endif
@@ -748,16 +751,16 @@ const uint16_t supported_events[] =
           {
             #ifdef MTP_SUPPORT_MODIFY_DATE
               // String is like: YYYYMMDDThhmmss.s
-              uint16_t dateModified;
-              uint16_t timeModified;
+              uint32_t dt;
+              DateTimeFields dtf;
 
-              if (storage_->getModifyDateTime(p1, &dateModified, &timeModified)) {
+              if (storage_->getModifyTime(p1, dt)) {
                 // going to use the buffer name to output
+                breakTime(dt, dtf);
                 snprintf(name, MAX_FILENAME_LEN, "%04u%02u%02uT%02u%02u%02u", 
-                      MTPFS_YEAR(dateModified), MTPFS_MONTH(dateModified), MTPFS_DAY(dateModified), 
-                      MTPFS_HOUR(timeModified), MTPFS_MINUTE(timeModified), MTPFS_SECOND(timeModified));
+                      dtf.year+1900, dtf.mon+1, dtf.mday, dtf.hour, dtf.min, dtf.sec);
                 writestring(name);
-                printf("Modify (%x %x)Date/time:%s\n", dateModified, timeModified, name);
+                printf("Modify (%x)Date/time:%s\n", dt, name);
                 break;
               }
             #endif
@@ -1624,10 +1627,8 @@ const uint16_t supported_events[] =
 
       int len=ReadMTPHeader();
       char filename[MAX_FILENAME_LEN];
-      dateCreated_ = 0;
-      timeCreated_ = 0;
-      dateModified_ = 0;
-      timeModified_ = 0;
+      dtCreated_ = 0;
+      dtModified_ = 0;
 
       printf("%x ",read32()); len-=4; // storage
       uint16_t oformat = read16();  len-=2; // format
@@ -1653,12 +1654,12 @@ const uint16_t supported_events[] =
 
       // Next is DateCreated followed by DateModified
       if (len) {
-        len -= readDateTimeString(&dateCreated_, &timeCreated_);
-        printf("Created: %x %x\n", dateCreated_, timeCreated_);
+        len -= readDateTimeString(&dtCreated_);
+        printf("Created: %x\n", dtCreated_);
       }
       if (len) {
-        len -= readDateTimeString(&dateModified_, &timeModified_);
-        printf("Modified: %x %x\n", dateModified_, timeModified_);
+        len -= readDateTimeString(&dtModified_);
+        printf("Modified: %x\n", dtModified_);
       }
 
 
@@ -1761,7 +1762,7 @@ const uint16_t supported_events[] =
       storage_->close();
 
       // lets see if we should update the date and time stamps. 
-      storage_->updateDateTimeStamps(object_id_, dateCreated_, timeCreated_, dateModified_, timeModified_);
+      storage_->updateDateTimeStamps(object_id_, dtCreated_, dtModified_);
 
       if (c_read_em) printf(" # USB Packets: %u total: %u avg ms: %u max: %u\n", c_read_em, sum_read_em, sum_read_em / c_read_em, read_em_max);
       if (c_write_em) printf(" # Write: %u total:%u avg ms: %u max: %u\n", c_write_em, sum_write_em, sum_write_em / c_write_em, write_em_max);
@@ -2165,7 +2166,7 @@ const uint16_t supported_events[] =
 
     int usb_init_events(void)
     {
-        usb_config_tx(MTP_EVENT_ENDPOINT, MTP_EVENT_SIZE, 0, txEvent_event);
+        //usb_config_tx(MTP_EVENT_ENDPOINT, MTP_EVENT_SIZE, 0, txEvent_event);
         //  
         //usb_config_rx(MTP_EVENT_ENDPOINT, MTP_EVENT_SIZE, 0, rxEvent_event);
         //usb_prepare_transfer(rx_event_transfer + 0, rx_event_buffer, MTP_EVENT_SIZE, 0);

@@ -14,7 +14,7 @@
 // LittleFS supports creating file systems (FS) in multiple memory types.  Depending on the
 // memory type you want to use you would uncomment one of the following constructors
 
-LittleFS_SPIFlash myfs;  // Used to create FS on SPI flash chips
+LittleFS_SPINAND myfs;  // Used to create FS on QSPI NAND flash chips located on the bottom of the T4.1 such as the W25N01G. for the full list of supported NAND flash see  https://github.com/PaulStoffregen/LittleFS#nand-flash
 
 LittleFSMTPCB lfsmtpcb;
 
@@ -43,7 +43,7 @@ void setup()
   Serial.print("Initializing LittleFS ...");
 
   // checks that the LittFS program has started with the disk size specified
-  if (!myfs.begin(7, SPI1)) {
+  if (!myfs.begin(3, SPI)) {
     Serial.printf("Error starting %s\n", "PROGRAM FLASH DISK");
     while (1) {
       // Error, so don't do anything more - stay stuck here
