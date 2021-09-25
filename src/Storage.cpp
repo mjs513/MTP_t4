@@ -298,7 +298,7 @@ void mtp_lock_storage(bool lock) {}
          r.dtModify = child_.getModifyTime(dtf) ? makeTime(dtf) : 0;
 #endif
 #ifdef MTP_SUPPORT_CREATE_DATE
-         r.dtModify = child_.getCreateTime(dtf) ? makeTime(dtf) : 0;
+         r.dtCreate = child_.getCreateTime(dtf) ? makeTime(dtf) : 0;
 #endif
 #endif
         sibling = AppendIndexRecord(r);
