@@ -277,74 +277,6 @@ const uint16_t supported_events[] =
     #define MTP_RESPONSE_OBJECT_TOO_LARGE                           0xA809
     #define MTP_RESPONSE_OBJECT_PROP_NOT_SUPPORTED                  0xA80A
 
-    // Date time helpers
-    static inline uint16_t MTPFS_DATE(uint16_t year, uint8_t month, uint8_t day) {
-      year -= 1980;
-      return year > 127 || month > 12 || day > 31 ? 0 :
-             year << 9 | month << 5 | day;
-    }
-    /** year part of FAT directory date field
-     * \param[in] fatDate Date in packed dir format.
-     *
-     * \return Extracted year [1980,2107]
-     */
-    static inline uint16_t MTPFS_YEAR(uint16_t fatDate) {
-      return 1980 + (fatDate >> 9);
-    }
-    /** month part of FAT directory date field
-     * \param[in] fatDate Date in packed dir format.
-     *
-     * \return Extracted month [1,12]
-     */
-    static inline uint8_t MTPFS_MONTH(uint16_t fatDate) {
-      return (fatDate >> 5) & 0XF;
-    }
-    /** day part of FAT directory date field
-     * \param[in] fatDate Date in packed dir format.
-     *
-     * \return Extracted day [1,31]
-     */
-    static inline uint8_t MTPFS_DAY(uint16_t fatDate) {
-      return fatDate & 0X1F;
-    }
-    /** time field for directory entry
-     * \param[in] hour [0,23]
-     * \param[in] minute [0,59]
-     * \param[in] second [0,59]
-     *
-     * \return Packed time for directory entry.
-     */
-    static inline uint16_t MTPFS_TIME(uint8_t hour, uint8_t minute, uint8_t second) {
-      return hour > 23 || minute > 59 || second > 59 ? 0 :
-             hour << 11 | minute << 5 | second >> 1;
-    }
-    /** hour part of FAT directory time field
-     * \param[in] fatTime Time in packed dir format.
-     *
-     * \return Extracted hour [0,23]
-     */
-    static inline uint8_t MTPFS_HOUR(uint16_t fatTime) {
-      return fatTime >> 11;
-    }
-    /** minute part of FAT directory time field
-     * \param[in] fatTime Time in packed dir format.
-     *
-     * \return Extracted minute [0,59]
-     */
-    static inline uint8_t MTPFS_MINUTE(uint16_t fatTime) {
-      return (fatTime >> 5) & 0X3F;
-    }
-    /** second part of FAT directory time field
-     * N\note second/2 is stored in packed time.
-     *
-     * \param[in] fatTime Time in packed dir format.
-     *
-     * \return Extracted second [0,58]
-     */
-    static inline uint8_t MTPFS_SECOND(uint16_t fatTime) {
-      return 2*(fatTime & 0X1F);
-    }
-
 
 // MTP Responder.
 /*
@@ -572,11 +504,9 @@ const uint16_t supported_events[] =
       dtf.mon = ((dtb[4]-'0') * 10) + (dtb[5]-'0') - 1; // zero based not 1
       dtf.mday =   ((dtb[6]-'0') * 10) + (dtb[7]-'0');
       dtf.wday = 0; // hopefully not needed...
-//      *pdate = MTPFS_DATE(year, month, day);
       dtf.hour = ((dtb[9]-'0') * 10) + (dtb[10]-'0');
       dtf.min =  ((dtb[11]-'0') * 10) + (dtb[12]-'0');
       dtf.sec =  ((dtb[13]-'0') * 10) + (dtb[14]-'0');
-      //*ptime = MTPFS_TIME(hour, min, sec);
       *pdt = makeTime(dtf);
       printf(">> date/Time: %x %u/%u/u %u:%u:%u\n", *pdt, dtf.mon, dtf.mday, year, dtf.hour, dtf.min, dtf.sec );
     }
