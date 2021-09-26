@@ -508,7 +508,7 @@ const uint16_t supported_events[] =
       dtf.min =  ((dtb[11]-'0') * 10) + (dtb[12]-'0');
       dtf.sec =  ((dtb[13]-'0') * 10) + (dtb[14]-'0');
       *pdt = makeTime(dtf);
-      printf(">> date/Time: %x %u/%u/u %u:%u:%u\n", *pdt, dtf.mon, dtf.mday, year, dtf.hour, dtf.min, dtf.sec );
+      printf(">> date/Time: %x %u/%u/%u %u:%u:%u\n", *pdt, dtf.mon+1, dtf.mday, year, dtf.hour, dtf.min, dtf.sec );
     }
     return cb;
   }
@@ -673,6 +673,8 @@ const uint16_t supported_events[] =
                 writestring(name);
                 printf("Create (%x)Date/time:%s\n", dt, name);
                 break;
+              } else {
+                printf("Create failed (%x)Date/time\n", dt);
               }
             #endif
           writestring("");
@@ -692,6 +694,8 @@ const uint16_t supported_events[] =
                 writestring(name);
                 printf("Modify (%x)Date/time:%s\n", dt, name);
                 break;
+              } else {
+                printf("modify failed (%x)Date/time\n", dt);
               }
             #endif
           }
@@ -1608,6 +1612,20 @@ const uint16_t supported_events[] =
       object_id_ = object_id = storage_->Create(store, parent, dir, filename);
       if ((uint32_t)object_id == 0xFFFFFFFFUL) return MTP_RESPONSE_SPECIFICATION_OF_DESTINATION_UNSUPPORTED; 
 
+      if (dir) {
+        // lets see if we should update the date and time stamps. 
+        // if it is dirctory, then sendObject will not be called, so do it now.
+        if (!storage_->updateDateTimeStamps(object_id_, dtCreated_, dtModified_) ) {
+          // BUGBUG: failed to update, maybe FS needs little time to settle in before trying this.
+          for (uint8_t i = 0; i < 10; i++) {
+            printf("!!!(%d) Try delay and call update time stamps again\n", i);
+            delay(25);
+            if (storage_->updateDateTimeStamps(object_id_, dtCreated_, dtModified_)) break;
+          }
+        }
+
+      }
+
       return MTP_RESPONSE_OK;
     }
 
@@ -2081,18 +2099,6 @@ const uint16_t supported_events[] =
   {
     static transfer_t tx_event_transfer[1] __attribute__ ((used, aligned(32)));
     static uint8_t tx_event_buffer[MTP_EVENT_SIZE] __attribute__ ((used, aligned(32)));
-
-//    static transfer_t rx_event_transfer[1] __attribute__ ((used, aligned(32)));
-//    static uint8_t rx_event_buffer[MTP_EVENT_SIZE] __attribute__ ((used, aligned(32)));
-
-    static uint32_t mtp_txEventcount=0;
-    static uint32_t mtp_rxEventcount=0;
-
-    uint32_t get_mtp_txEventcount() {return mtp_txEventcount; }
-    uint32_t get_mtp_rxEventcount() {return mtp_rxEventcount; }
-    
-    static void txEvent_event(transfer_t *t) { mtp_txEventcount++;}
-//    static void rxEvent_event(transfer_t *t) { mtp_rxEventcount++;}
 
     int usb_init_events(void)
     {

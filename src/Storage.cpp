@@ -225,8 +225,13 @@ void mtp_lock_storage(bool lock) {}
     mtp_lock_storage(true);
     if(sd_isOpen(file_)) file_.close();
     file_=sd_open(store,filename,mode);
-    open_file_ = i;
-    mode_ = mode;
+    if (!sd_isOpen(file_)) {
+      MTPD::PrintStream()->printf("OpenFileByIndex failed to open (%u):%s mode: %u\n", i, filename, mode);
+      open_file_ = 0xFFFFFFFEUL;
+    } else {
+      open_file_ = i;
+      mode_ = mode;      
+    }
     mtp_lock_storage(false);
   }
 
@@ -421,7 +426,7 @@ bool MTPStorage_SD::updateDateTimeStamps (uint32_t handle, uint32_t dtCreated, u
 #if defined(MTP_SUPPORT_MODIFY_DATE) || defined(MTP_SUPPORT_CREATE_DATE)
     Record r = ReadIndexRecord(handle);
     DateTimeFields dtf; 
-  OpenFileByIndex(handle, FILE_WRITE);
+  OpenFileByIndex(handle, FILE_READ);
   if(!sd_isOpen(file_)) {
     MTPD::PrintStream()->printf("MTPStorage_SD::updateDateTimeStamps failed to open file\n");
     return false;
@@ -440,8 +445,6 @@ bool MTPStorage_SD::updateDateTimeStamps (uint32_t handle, uint32_t dtCreated, u
   #endif
 
     WriteIndexRecord(handle, r);
-    // save away the datea. 
-    file_.close();
     mtp_lock_storage(false);
 #endif  
     return true;
@@ -561,6 +564,8 @@ void MTPStorage_SD::removeFile(uint32_t store, char *file)
 #endif
         // does not do any good if we don't save the data!
         WriteIndexRecord(ret, r);
+        file_.close();
+        open_file_ = 0xFFFFFFFEUL;
       }
 #endif
 

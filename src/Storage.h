@@ -29,7 +29,9 @@
 #define Storage_H
 
 // BUGBUG:: added to work for now... 
+#if TEENSYDUINO >= 156
 #define FS_FILE_SUPPORT_DATES
+#endif
 
 #include "core_pins.h"
 

@@ -68,9 +68,9 @@ uint8_t current_store = 0;
 #endif
 #define SPI_SPEED SD_SCK_MHZ(16)  // adjust to sd card 
 
-#define COUNT_MYFS  1  // could do by count, but can limit how many are created...
+#define COUNT_MYFS  2  // could do by count, but can limit how many are created...
 SDMTPClass mySD[] = {
-//                      {mtpd, storage, "SDIO", CS_SD}, 
+                      {mtpd, storage, "SDIO", CS_SD}, 
                       {mtpd, storage, "SD8", 8, 9, SHARED_SPI, SPI_SPEED}
                     };
 //SDMTPClass mySD(mtpd, storage, "SD10", 10, 0xff, SHARED_SPI, SPI_SPEED);
@@ -344,8 +344,8 @@ void loop()
       for (uint32_t ii = 0; ii < fsCount; ii++) {
         DBGSerial.printf("store:%u storage:%x name:%s fs:%x\n", ii, mtpd.Store2Storage(ii), storage.getStoreName(ii), (uint32_t)storage.getStoreFS(ii));
       }
-      //DBGSerial.println("\nDump Index List");
-      //storage.dumpIndexList();
+      DBGSerial.println("\nDump Index List");
+      storage.dumpIndexList();
     }
     break;
     case '2':
